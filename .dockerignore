@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Documentação
+*.md
+LICENSE
+
+# Logs
+*.log
+logs/
+
+# Arquivos de ambiente (devem ser passados via variáveis de ambiente ou secrets)
+.env
+.env.local
+.env.*.local
+
+# Scripts de instalação (já executados no Dockerfile)
+install_excel_dependencies.sh
+
+# Outros
+.DS_Store
+*.tmp
+*.bak
+

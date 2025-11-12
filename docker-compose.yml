@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fortlar-api
+    ports:
+      - "8088:8088"
+    environment:
+      # Variáveis de ambiente do banco de dados
+      - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI}
+      - SQLALCHEMY_POOL_SIZE=${SQLALCHEMY_POOL_SIZE:-15}
+      - SQLALCHEMY_MAX_OVERFLOW=${SQLALCHEMY_MAX_OVERFLOW:-20}
+      - SQLALCHEMY_POOL_TIMEOUT=${SQLALCHEMY_POOL_TIMEOUT:-30}
+      - SQLALCHEMY_POOL_RECYCLE=${SQLALCHEMY_POOL_RECYCLE:-1800}
+      - SQLALCHEMY_POOL_PRE_PING=${SQLALCHEMY_POOL_PRE_PING:-True}
+      - SQLALCHEMY_SHOW_SQL=${SQLALCHEMY_SHOW_SQL:-False}
+      
+      # JWT
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_EXPIRATION_MINUTES=${JWT_EXPIRATION_MINUTES:-60}
+      
+      # Email
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_FROM=${MAIL_FROM}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - MAIL_SERVER=${MAIL_SERVER}
+      - MAIL_USERNAME_ORDER=${MAIL_USERNAME_ORDER}
+      
+      # Supabase
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_BUCKET=${SUPABASE_BUCKET}
+      
+      # CORS
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      
+      # Timezone
+      - TZ=${TZ:-America/Sao_Paulo}
+    env_file:
+      - .env
+    restart: unless-stopped
+
