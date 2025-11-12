@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     default-libmysqlclient-dev \
     pkg-config \
+    python3-dev \
+    libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copia o arquivo de dependências
