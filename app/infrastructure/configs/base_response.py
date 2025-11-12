@@ -1,13 +1,14 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict
 
 
 class BaseResponseModel(BaseModel):
-    class Config:
-        orm_mode = True  # Permite passar models ORM diretamente
-        use_enum_values = True  # Serializa enums para seus valores
+    model_config = ConfigDict(
+        from_attributes=True,  # Permite passar models ORM diretamente (antigo orm_mode)
+        use_enum_values=True  # Serializa enums para seus valores
+    )
 
     def to_dict(self, include_none: bool = True) -> Dict[str, Any]:
         """
@@ -26,7 +27,7 @@ class BaseResponseModel(BaseModel):
             else:
                 return value
 
-        data = self.dict()
+        data = self.model_dump()
         data = {k: serialize_value(v) for k, v in data.items()}
 
         if not include_none:

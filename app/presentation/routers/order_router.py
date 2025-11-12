@@ -60,7 +60,7 @@ async def list_orders(
     """
     try:
         use_case: ListOrdersUseCase = ListOrdersUseCase()
-        orders_data = use_case.execute(request.dict(), session)
+        orders_data = use_case.execute(request.model_dump(), session)
         return [OrderResponse(**order) for order in orders_data]
     except HTTPException:
         raise
@@ -119,7 +119,7 @@ async def list_orders_by_cliente(
     try:
         use_case: ListOrdersUseCase = ListOrdersUseCase()
         request = ListOrdersByClienteRequest(cliente_id=cliente_id)
-        orders_data = use_case.execute(request.dict(), session)
+        orders_data = use_case.execute(request.model_dump(), session)
         return [OrderResponse(**order) for order in orders_data]
     except HTTPException:
         raise
@@ -147,7 +147,7 @@ async def list_orders_by_status(
     try:
         use_case: ListOrdersUseCase = ListOrdersUseCase()
         request = ListOrdersByStatusRequest(status=status)
-        orders_data = use_case.execute(request.dict(), session)
+        orders_data = use_case.execute(request.model_dump(), session)
         return [OrderResponse(**order) for order in orders_data]
     except HTTPException:
         raise
@@ -175,7 +175,7 @@ async def list_orders_recentes(
     try:
         use_case: ListRecentOrdersUseCase = ListRecentOrdersUseCase()
         request = ListOrdersRecentesRequest(days=days)
-        orders_data = use_case.execute(request.dict(), session)
+        orders_data = use_case.execute(request.model_dump(), session)
         return [OrderResponse(**order) for order in orders_data]
     except HTTPException:
         raise
@@ -239,7 +239,7 @@ async def send_order_email(
         
         return JSONResponse(
             status_code=200,
-            content=result.dict()
+            content=result.model_dump()
         )
         
     except HTTPException:
