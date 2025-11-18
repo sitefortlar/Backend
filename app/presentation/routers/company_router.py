@@ -30,7 +30,7 @@ company_router = APIRouter(
 
 
 @company_router.post(
-    "/",
+    "",
     response_model=CompanyResponse,
     status_code=201,
     summary="Criar empresa",
@@ -50,7 +50,7 @@ async def create_company(
 
 
 @company_router.get(
-    "/",
+    "",
     response_model=List[CompanyResponse],
     summary="Listar empresas",
     description="Lista todas as empresas com filtros opcionais"

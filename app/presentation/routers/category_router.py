@@ -33,7 +33,7 @@ category_router = APIRouter(
 
 
 @category_router.post(
-    "/",
+    "",
     response_model=CategoryResponse,
     status_code=201,
     summary="Create category",

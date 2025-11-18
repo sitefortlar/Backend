@@ -21,7 +21,7 @@ contact_router = APIRouter(
 
 
 @contact_router.get(
-    "/",
+    "",
     summary="Listar contatos",
     description="Lista todos os contatos com filtros opcionais"
 )

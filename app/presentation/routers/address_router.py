@@ -20,7 +20,7 @@ address_router = APIRouter(
 
 
 @address_router.get(
-    "/",
+    "",
     summary="Listar endereços",
     description="Lista todos os endereços com filtros opcionais"
 )

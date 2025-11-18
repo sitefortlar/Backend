@@ -40,7 +40,7 @@ order_router = APIRouter(
 
 
 @order_router.get(
-    "/",
+    "",
     summary="Listar orders",
     description="Lista todos os orders com filtros opcionais",
     response_model=List[OrderResponse]

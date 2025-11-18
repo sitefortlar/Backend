@@ -28,7 +28,7 @@ region_router = APIRouter(
 
 
 @region_router.post(
-    "/",
+    "",
     response_model=RegionResponse,
     status_code=201,
     summary="Create region",
