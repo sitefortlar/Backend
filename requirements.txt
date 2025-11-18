@@ -15,4 +15,5 @@ brasilapi==0.1.0
 supabase>=2.0.0
 requests>=2.31.0
 pydantic[email]>=2.0.0
-passlib[bcrypt]>=1.7.4
+passlib==1.7.4
+bcrypt==4.0.1
