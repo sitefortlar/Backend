@@ -1,5 +1,6 @@
 import uuid
 from fastapi import HTTPException, status
+from loguru import logger
 
 from app.application.service.email.template.reset_password_template import reset_password
 from app.application.service.email_service import EmailService
@@ -48,18 +49,27 @@ class ForgotPasswordUseCase(UseCase[ForgotPasswordRequest, None]):
             tipo=EmailTokenTypeEnum.RESET_SENHA
         )
 
+        # Persiste token no banco primeiro (importante para não perder o token se email falhar)
+        self.email_token_repo.create_email_token(email_token, session)
+        
         # Busca o email da empresa através do contato
         if company.contatos and len(company.contatos) > 0:
             email = company.contatos[0].email
             
-            # Gera HTML do email
-            html = reset_password("https://meusite.com/reset-password", token)
-            
-            # Envia email
-            self.email_service.send_email(email, html, "Redefinição de Senha")
+            # Tenta enviar email (não quebra a aplicação se falhar)
+            try:
+                # Gera HTML do email
+                html = reset_password("https://meusite.com/reset-password", token)
+                
+                # Envia email (pode falhar na Render se SMTP estiver bloqueado)
+                self.email_service.send_email(email, html, "Redefinição de Senha")
+                logger.info(f"✅ Email de redefinição de senha enviado para {email}")
+            except Exception as e:
+                # Loga o erro mas não quebra a aplicação
+                # O token já foi salvo, então o usuário pode solicitar reenvio
+                logger.warning(f"⚠️  Erro ao enviar email de redefinição para {email}: {e}")
+                logger.info("💡 Token de redefinição foi criado. O usuário pode solicitar reenvio do email.")
 
-        # Persiste token no banco
-        self.email_token_repo.create_email_token(email_token, session)
         session.commit()
 
         return dict(message="Email de redefinição de senha enviado com sucesso", company_id=company.id_empresa)

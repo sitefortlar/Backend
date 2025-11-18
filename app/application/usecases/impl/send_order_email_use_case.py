@@ -178,13 +178,21 @@ class SendOrderEmailUseCase(UseCase[SendOrderEmailUseCaseRequest, SendOrderEmail
         if mail_order_copy:
             cc_emails.append(mail_order_copy)
         
-        # Envia email com cópia se configurado
-        if cc_emails:
-            self.email_service.send_email(email_empresa, html_email, subject, cc=cc_emails)
-            logger.info(f"✅ Email de order enviado com sucesso para {email_empresa} com cópia para {', '.join(cc_emails)}")
-        else:
-            self.email_service.send_email(email_empresa, html_email, subject)
-            logger.info(f"✅ Email de order enviado com sucesso para {email_empresa}")
+        # Tenta enviar email (não quebra a aplicação se falhar)
+        # O order será criado mesmo se o email falhar
+        try:
+            # Envia email com cópia se configurado
+            if cc_emails:
+                self.email_service.send_email(email_empresa, html_email, subject, cc=cc_emails)
+                logger.info(f"✅ Email de order enviado com sucesso para {email_empresa} com cópia para {', '.join(cc_emails)}")
+            else:
+                self.email_service.send_email(email_empresa, html_email, subject)
+                logger.info(f"✅ Email de order enviado com sucesso para {email_empresa}")
+        except Exception as e:
+            # Loga o erro mas não quebra a aplicação
+            # O order será criado mesmo sem o email
+            logger.warning(f"⚠️  Erro ao enviar email de order para {email_empresa}: {e}")
+            logger.info("💡 Order será criado mesmo sem envio de email.")
 
     def _create_order_entity(self, company_id: int, valor_total: Decimal) -> Order:
         """Cria a entidade Order"""

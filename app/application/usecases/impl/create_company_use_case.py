@@ -152,6 +152,8 @@ class CreateCompanyUseCase(UseCase[CompanyRequest, CompanyResponse]):
 
     def _send_verification_email(self, company_id: int, email: str, session) -> None:
         """Envia email de verificação para a empresa"""
+        from loguru import logger
+        
         token = self.hash_service.generate_email_token(company_id)
         
         # Cria token de email
@@ -161,14 +163,22 @@ class CreateCompanyUseCase(UseCase[CompanyRequest, CompanyResponse]):
             tipo=EmailTokenTypeEnum.VALIDACAO_EMAIL
         )
         
-        # Gera HTML do email
-        html = verification("https://meusite.com/ativar?token=123", token)
-        
-        # Envia email
-        self.email_service.send_email(email, html, "Primeiro Acesso")
-        
-        # Persiste token
+        # Persiste token primeiro (importante para não perder o token se email falhar)
         self.email_token_repo.create_email_token(email_token, session)
+        
+        # Tenta enviar email (não quebra a aplicação se falhar)
+        try:
+            # Gera HTML do email
+            html = verification("https://meusite.com/ativar?token=123", token)
+            
+            # Envia email (pode falhar na Render se SMTP estiver bloqueado)
+            self.email_service.send_email(email, html, "Primeiro Acesso")
+            logger.info(f"✅ Email de verificação enviado para {email}")
+        except Exception as e:
+            # Loga o erro mas não quebra a aplicação
+            # O token já foi salvo, então o usuário pode solicitar reenvio
+            logger.warning(f"⚠️  Erro ao enviar email de verificação para {email}: {e}")
+            logger.info("💡 Token de verificação foi criado. O usuário pode solicitar reenvio do email.")
 
 
 

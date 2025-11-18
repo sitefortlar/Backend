@@ -1,4 +1,5 @@
 from fastapi import HTTPException, status
+from loguru import logger
 
 from app.application.usecases.use_case import UseCase
 from app.domain.models.email_token_model import EmailToken
@@ -60,13 +61,21 @@ class ResendTokenUseCase(UseCase[ResendTokenRequest, None]):
             tipo=EmailTokenTypeEnum.VALIDACAO_EMAIL
         )
 
-        # Gera HTML do email
-        html = verification("https://meusite.com/ativar?token=123", token)
-
-        # Envia email
-        self.email_service.send_email(email, html, "Reenvio de Token de Validação")
-
-        # Persiste token
+        # Persiste token primeiro (importante para não perder o token se email falhar)
         self.email_token_repo.create_email_token(email_token, session)
+        
+        # Tenta enviar email (não quebra a aplicação se falhar)
+        try:
+            # Gera HTML do email
+            html = verification("https://meusite.com/ativar?token=123", token)
+
+            # Envia email (pode falhar na Render se SMTP estiver bloqueado)
+            self.email_service.send_email(email, html, "Reenvio de Token de Validação")
+            logger.info(f"✅ Email de reenvio de token enviado para {email}")
+        except Exception as e:
+            # Loga o erro mas não quebra a aplicação
+            # O token já foi salvo, então o usuário pode solicitar reenvio novamente
+            logger.warning(f"⚠️  Erro ao enviar email de reenvio para {email}: {e}")
+            logger.info("💡 Token foi criado. O usuário pode solicitar reenvio novamente.")
 
         return token
