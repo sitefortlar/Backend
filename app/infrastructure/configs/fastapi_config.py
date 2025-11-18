@@ -70,27 +70,35 @@ application = FastAPI(
         "url": "https://opensource.org/licenses/MIT",
     }
 )
-# Configuração de CORS
+# ============================================================================
+# CONFIGURAÇÃO DE CORS (Cross-Origin Resource Sharing)
+# ============================================================================
 # Permite múltiplas origens separadas por vírgula via variável de ambiente
-# Exemplo: CORS_ORIGINS=http://localhost:3000,https://app.seudominio.com
-cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000")
-cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+# Exemplo: CORS_ORIGINS=https://seu-app.vercel.app,https://*.vercel.app,http://localhost:3000
+# 
+# IMPORTANTE: Se CORS_ORIGINS não estiver configurado, permite todas as origens (*)
+# Para produção, é recomendado configurar as URLs específicas no Render.com
+# ============================================================================
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
 
-# Se não houver origens configuradas, permite todas (apenas para desenvolvimento)
-# Em produção, sempre defina CORS_ORIGINS com as origens específicas
-if not cors_origins:
-    cors_origins = ["*"]
-    allow_credentials = False  # Não pode usar credentials com wildcard
+if cors_origins_env:
+    # Se CORS_ORIGINS estiver configurado, usa as origens específicas
+    cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+    allow_credentials = True  # Permite credentials quando usa origens específicas
 else:
-    allow_credentials = True
+    # Se não houver origens configuradas, permite todas (útil para desenvolvimento e produção)
+    # Isso resolve o problema de CORS quando o frontend está em Vercel
+    cors_origins = ["*"]
+    allow_credentials = False  # Não pode usar credentials com wildcard "*"
 
 application.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=allow_credentials,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],  # Adicionado HEAD
     allow_headers=["*"],
     expose_headers=["*"],
+    max_age=3600,  # Cache do preflight OPTIONS por 1 hora (melhora performance)
 )
 
 

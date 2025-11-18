@@ -28,63 +28,8 @@ load_dotenv()
 # ============================================================================
 
 # Tenta obter URL completa das variáveis de ambiente
-SQLALCHEMY_DATABASE_URI = os.getenv('SQLALCHEMY_DATABASE_URI')
+SQLALCHEMY_DATABASE_URI = 'postgresql://postgres.zpcnvcthecltyiopstxd:j4W6dhjlLaEIpFvd@aws-1-us-east-1.pooler.supabase.com:5432/postgres'
 
-# Se não tiver URL completa, tenta construir a partir de variáveis separadas
-if not SQLALCHEMY_DATABASE_URI:
-    # Suporta múltiplos nomes de variáveis para flexibilidade
-    db_user = os.getenv('DB_USER') or os.getenv('user')
-    db_password = os.getenv('DB_PASSWORD') or os.getenv('password')
-    db_host = os.getenv('DB_HOST') or os.getenv('host')
-    db_port = os.getenv('DB_PORT') or os.getenv('port', '5432')
-    db_name = os.getenv('DB_NAME') or os.getenv('dbname', 'postgres')
-    
-    # Se todas as variáveis necessárias estiverem disponíveis, constrói a URL
-    if db_user and db_password and db_host:
-        from urllib.parse import quote_plus
-        # Codifica a senha para URL (trata caracteres especiais como @, #, $, etc)
-        encoded_password = quote_plus(db_password)
-        SQLALCHEMY_DATABASE_URI = f'postgresql://{db_user}:{encoded_password}@{db_host}:{db_port}/{db_name}'
-    else:
-        # Detecta se está em ambiente de produção
-        is_production = (
-            os.getenv('RENDER') or 
-            os.getenv('RENDER_SERVICE_NAME') or
-            os.getenv('DYNO') or  # Heroku
-            os.getenv('RAILWAY_ENVIRONMENT') or  # Railway
-            os.getenv('VERCEL')  # Vercel
-        )
-        
-        if is_production:
-            # Em produção, exige configuração explícita (segurança)
-            raise ValueError(
-                "❌ SQLALCHEMY_DATABASE_URI não configurada!\n\n"
-                "Configure a variável SQLALCHEMY_DATABASE_URI no Render.com com a URL de Connection Pooling.\n"
-                "A conexão direta (db.xxx.supabase.co) é bloqueada pelo Supabase em produção.\n\n"
-                "📋 Como obter a URL de Connection Pooling:\n"
-                "1. Acesse https://app.supabase.com\n"
-                "2. Selecione seu projeto\n"
-                "3. Vá em Settings > Database\n"
-                "4. Na seção 'Connection string', selecione a aba 'Connection pooling'\n"
-                "5. Copie a URL completa (formato: postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres)\n"
-                "6. Configure como SQLALCHEMY_DATABASE_URI no Render.com\n\n"
-                "💡 Alternativa: Configure as variáveis DB_USER, DB_PASSWORD, DB_HOST separadamente"
-            )
-        else:
-            # Em desenvolvimento local, permite fallback para conexão direta
-            SQLALCHEMY_DATABASE_URI = 'postgresql://postgres:%401234fortlar@db.zpcnvcthecltyiopstxd.supabase.co:5432/postgres'
-
-# Valida se a URL está usando Connection Pooling em produção
-if SQLALCHEMY_DATABASE_URI:
-    is_production = os.getenv('RENDER') or os.getenv('RENDER_SERVICE_NAME')
-    if is_production and 'pooler.supabase.com' not in SQLALCHEMY_DATABASE_URI:
-        import warnings
-        warnings.warn(
-            "⚠️  A URL de conexão não está usando Connection Pooling (pooler.supabase.com). "
-            "Isso pode causar erros 'Network is unreachable' em produção. "
-            "Use Connection Pooling do Supabase para produção.",
-            UserWarning
-        )
 
 # Pool de Conexão
 SQLALCHEMY_POOL_SIZE=15
