@@ -10,7 +10,7 @@ try:
     RESEND_AVAILABLE = True
 except ImportError:
     RESEND_AVAILABLE = False
-    logger.warning("⚠️  Resend não instalado. Instale com: pip install resend")
+    # Warning será mostrado apenas se RESEND_API_KEY estiver configurado
 
 # Fallback para SMTP (apenas para desenvolvimento local)
 if not RESEND_AVAILABLE:
@@ -30,6 +30,14 @@ class EmailService:
     def __init__(self):
         # Configuração do Resend (recomendado para produção)
         self.resend_api_key = os.getenv("RESEND_API_KEY")
+        
+        # Se RESEND_API_KEY está configurado mas resend não está instalado, mostra warning
+        if self.resend_api_key and not RESEND_AVAILABLE:
+            logger.warning(
+                "⚠️  RESEND_API_KEY configurado mas Resend não está instalado. "
+                "Instale com: pip install resend"
+            )
+        
         self.use_resend = RESEND_AVAILABLE and self.resend_api_key
         
         if self.use_resend:
@@ -44,7 +52,18 @@ class EmailService:
         
         # Fallback para SMTP (apenas se Resend não estiver disponível)
         if not self.use_resend:
-            logger.warning("⚠️  Usando SMTP como fallback (pode não funcionar na Render)")
+            is_production = os.getenv('RENDER') or os.getenv('RENDER_SERVICE_NAME')
+            if is_production:
+                # Em produção, só mostra warning se não tiver RESEND_API_KEY configurado
+                if not self.resend_api_key:
+                    logger.warning(
+                        "⚠️  Usando SMTP como fallback (bloqueado na Render). "
+                        "Configure RESEND_API_KEY para enviar emails."
+                    )
+            else:
+                # Em desenvolvimento, apenas loga info
+                logger.debug("Usando SMTP como fallback (desenvolvimento local)")
+            
             self.username = envs.MAIL_USERNAME
             self.password = envs.MAIL_PASSWORD
             self.mail_from = envs.MAIL_FROM
@@ -119,10 +138,9 @@ class EmailService:
         is_production = os.getenv('RENDER') or os.getenv('RENDER_SERVICE_NAME')
         
         if is_production:
-            # Na Render, SMTP é bloqueado - loga aviso mas não quebra a aplicação
-            logger.warning(
-                f"⚠️  Tentativa de enviar email via SMTP na Render (bloqueado). "
-                f"Configure RESEND_API_KEY para usar Resend (HTTP). "
+            # Na Render, SMTP é bloqueado - loga debug (warning já foi mostrado no __init__)
+            logger.debug(
+                f"Tentativa de enviar email via SMTP na Render (bloqueado). "
                 f"Email não enviado para: {recipient}"
             )
             # Não levanta exceção - permite que a aplicação continue funcionando
@@ -164,9 +182,8 @@ class EmailService:
             # Erro de rede (ex: Network is unreachable)
             # Se ainda assim tentou conectar em produção, trata silenciosamente
             if is_production or "Network is unreachable" in str(e) or "Errno 101" in str(e):
-                logger.warning(
-                    f"⚠️  SMTP bloqueado (OSError: {e}). "
-                    f"Configure RESEND_API_KEY para enviar emails. "
+                logger.debug(
+                    f"SMTP bloqueado (OSError: {e}). "
                     f"Email não enviado para: {recipient}"
                 )
                 return None
@@ -178,7 +195,7 @@ class EmailService:
             logger.error(f"❌ Erro ao enviar email via SMTP: {e}")
             # Se for erro de rede em produção, não quebra
             if is_production or "Network is unreachable" in str(e) or "Errno 101" in str(e):
-                logger.warning(f"⚠️  SMTP bloqueado. Configure RESEND_API_KEY.")
+                logger.debug(f"SMTP bloqueado. Email não enviado.")
                 return None
             # Outros erros em desenvolvimento, levanta exceção
             raise
