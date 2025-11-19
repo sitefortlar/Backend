@@ -114,21 +114,22 @@ class EmailService:
         cc: Optional[List[str]] = None
     ):
         """Envia email usando SMTP (fallback - pode não funcionar na Render)"""
+        # IMPORTANTE: Verifica produção ANTES de tentar conectar (Render bloqueia SMTP)
+        # Isso evita tentar conectar e causar erro que quebra a aplicação
+        is_production = os.getenv('RENDER') or os.getenv('RENDER_SERVICE_NAME')
+        
+        if is_production:
+            # Na Render, SMTP é bloqueado - loga aviso mas não quebra a aplicação
+            logger.warning(
+                f"⚠️  Tentativa de enviar email via SMTP na Render (bloqueado). "
+                f"Configure RESEND_API_KEY para usar Resend (HTTP). "
+                f"Email não enviado para: {recipient}"
+            )
+            # Não levanta exceção - permite que a aplicação continue funcionando
+            return None
+        
+        # Em desenvolvimento local, tenta enviar via SMTP
         try:
-            # Detecta se está em produção (Render bloqueia SMTP)
-            is_production = os.getenv('RENDER') or os.getenv('RENDER_SERVICE_NAME')
-            
-            if is_production:
-                # Na Render, SMTP é bloqueado - loga erro mas não quebra a aplicação
-                logger.warning(
-                    f"⚠️  Tentativa de enviar email via SMTP na Render (bloqueado). "
-                    f"Configure RESEND_API_KEY para usar Resend (HTTP). "
-                    f"Email não enviado para: {recipient}"
-                )
-                # Não levanta exceção - permite que a aplicação continue funcionando
-                return None
-            
-            # Em desenvolvimento local, tenta enviar via SMTP
             # Monta mensagem
             msg = EmailMessage()
             msg["Subject"] = subject
@@ -160,15 +161,14 @@ class EmailService:
                 logger.info(f"✅ Email enviado via SMTP para {recipient}")
 
         except OSError as e:
-            # Erro de rede (ex: Network is unreachable na Render)
-            is_production = os.getenv('RENDER') or os.getenv('RENDER_SERVICE_NAME')
-            if is_production:
+            # Erro de rede (ex: Network is unreachable)
+            # Se ainda assim tentou conectar em produção, trata silenciosamente
+            if is_production or "Network is unreachable" in str(e) or "Errno 101" in str(e):
                 logger.warning(
-                    f"⚠️  SMTP bloqueado na Render (OSError: {e}). "
+                    f"⚠️  SMTP bloqueado (OSError: {e}). "
                     f"Configure RESEND_API_KEY para enviar emails. "
                     f"Email não enviado para: {recipient}"
                 )
-                # Não levanta exceção em produção - permite que a aplicação continue
                 return None
             else:
                 # Em desenvolvimento, levanta a exceção normalmente
@@ -176,10 +176,9 @@ class EmailService:
                 raise
         except Exception as e:
             logger.error(f"❌ Erro ao enviar email via SMTP: {e}")
-            # Em desenvolvimento, levanta a exceção
-            # Em produção, apenas loga (se SMTP estiver bloqueado)
-            is_production = os.getenv('RENDER') or os.getenv('RENDER_SERVICE_NAME')
-            if is_production and "Network is unreachable" in str(e):
-                logger.warning(f"⚠️  SMTP bloqueado na Render. Configure RESEND_API_KEY.")
+            # Se for erro de rede em produção, não quebra
+            if is_production or "Network is unreachable" in str(e) or "Errno 101" in str(e):
+                logger.warning(f"⚠️  SMTP bloqueado. Configure RESEND_API_KEY.")
                 return None
+            # Outros erros em desenvolvimento, levanta exceção
             raise
