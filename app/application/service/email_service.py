@@ -6,7 +6,7 @@ import envs
 
 # Tenta importar Resend (recomendado para produção - funciona na Render)
 try:
-    from resend import Resend
+    import resend
     RESEND_AVAILABLE = True
 except ImportError:
     RESEND_AVAILABLE = False
@@ -42,7 +42,8 @@ class EmailService:
         
         if self.use_resend:
             try:
-                self.resend_client = Resend(api_key=self.resend_api_key)
+                # Configura a API key do Resend (forma de módulo conforme documentação)
+                resend.api_key = self.resend_api_key
                 # Usa RESEND_FROM_EMAIL se configurado, senão usa MAIL_FROM
                 self.from_email = os.getenv("RESEND_FROM_EMAIL", envs.MAIL_FROM or "noreply@fortlar.com.br")
                 logger.info(f"✅ EmailService inicializado com Resend (HTTP) - From: {self.from_email}")
@@ -112,8 +113,8 @@ class EmailService:
             if cc:
                 params["cc"] = cc
             
-            # Envia via Resend
-            response = self.resend_client.emails.send(params)
+            # Envia via Resend usando a forma de módulo conforme documentação
+            response = resend.Emails.send(params)
             
             logger.info(f"✅ Email enviado via Resend para {recipient} (ID: {response.get('id', 'N/A')})")
             if cc:
@@ -123,6 +124,9 @@ class EmailService:
             
         except Exception as e:
             logger.error(f"❌ Erro ao enviar email via Resend: {e}")
+            logger.error(f"   Detalhes do erro: {str(e)}")
+            if hasattr(e, 'response'):
+                logger.error(f"   Response: {e.response}")
             raise
 
     def _send_with_smtp(
