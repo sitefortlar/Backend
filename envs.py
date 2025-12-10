@@ -50,7 +50,7 @@ MAIL_USERNAME_ORDER='vendas@fortlar.com.br'  # Email para receber cópia dos ord
 
 MAIL_USERNAME='sitefortlar@gmail.com'
 MAIL_PASSWORD='odil hbbe zsfp xpdy'
-MAIL_FROM="sitefortlar@gmail.com"
+MAIL_FROM="vendas@fortlar.com.br"
 MAIL_PORT=587
 MAIL_SERVER="smtp.gmail.com"
 

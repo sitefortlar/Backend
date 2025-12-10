@@ -44,9 +44,36 @@ class EmailService:
             try:
                 # Configura a API key do Resend (forma de módulo conforme documentação)
                 resend.api_key = self.resend_api_key
-                # Usa RESEND_FROM_EMAIL se configurado, senão usa MAIL_FROM
-                self.from_email = os.getenv("RESEND_FROM_EMAIL", envs.MAIL_FROM or "noreply@fortlar.com.br")
-                logger.info(f"✅ EmailService inicializado com Resend (HTTP) - From: {self.from_email}")
+                
+                # Obtém o email "from" configurado
+                configured_from = os.getenv("RESEND_FROM_EMAIL", envs.MAIL_FROM or "vendas@fortlar.com.br")
+                
+                # Domínios públicos que NÃO são permitidos pelo Resend (precisam ser verificados)
+                # O Resend permite apenas domínios verificados ou o email de teste (resend.dev)
+                public_email_domains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'live.com', 'icloud.com', 'aol.com']
+                
+                # Extrai o domínio do email
+                if '@' in configured_from:
+                    email_domain = configured_from.split('@')[-1].lower()
+                else:
+                    email_domain = ''
+                
+                # Se o domínio é um domínio público não verificado, usa o email de teste do Resend
+                if email_domain in public_email_domains:
+                    self.from_email = "onboarding@resend.dev"
+                    logger.warning(
+                        f"⚠️  Email 'from' configurado ({configured_from}) usa domínio público não verificado. "
+                        f"Usando email de teste do Resend: {self.from_email}. "
+                        f"Para produção, configure RESEND_FROM_EMAIL com um domínio verificado no Resend (https://resend.com/domains)."
+                    )
+                elif email_domain == 'resend.dev':
+                    # Domínio de teste do Resend - sempre permitido
+                    self.from_email = configured_from
+                    logger.info(f"✅ EmailService inicializado com Resend (HTTP) - From: {self.from_email} (email de teste)")
+                else:
+                    # Assume que é um domínio verificado ou customizado
+                    self.from_email = configured_from
+                    logger.info(f"✅ EmailService inicializado com Resend (HTTP) - From: {self.from_email}")
             except Exception as e:
                 logger.error(f"❌ Erro ao inicializar Resend: {e}")
                 self.use_resend = False

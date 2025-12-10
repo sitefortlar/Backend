@@ -33,16 +33,20 @@
 
 #### **2. RESEND_FROM_EMAIL** (OPCIONAL)
 - **O que é:** Email remetente verificado no Resend
+- **⚠️ IMPORTANTE:** Domínios públicos (Gmail, Yahoo, Hotmail, etc.) **NÃO podem ser verificados** no Resend
 - **Como obter:**
   1. No Resend, vá em: **Domains** → **Add Domain**
-  2. Adicione seu domínio (ex: `fortlar.com.br`)
-  3. Configure os registros DNS conforme instruções
-  4. OU use o domínio de teste: `onboarding@resend.dev` (apenas para testes)
-  5. Configure no Render.com:
+  2. Adicione seu domínio próprio (ex: `fortlar.com.br`) - **NÃO pode ser gmail.com, yahoo.com, etc.**
+  3. Configure os registros DNS conforme instruções do Resend
+  4. Aguarde verificação (pode levar alguns minutos)
+  5. OU use o domínio de teste: `onboarding@resend.dev` (funciona automaticamente, sem verificação)
+  6. Configure no Render.com:
      - Key: `RESEND_FROM_EMAIL`
      - Value: `noreply@fortlar.com.br` (ou seu email verificado)
 
-**Nota:** Se não configurar `RESEND_FROM_EMAIL`, o sistema usa `MAIL_FROM` do `envs.py` como fallback.
+**Nota:** 
+- Se não configurar `RESEND_FROM_EMAIL`, o sistema usa `MAIL_FROM` do `envs.py` como fallback
+- Se o email configurado usar domínio público (gmail.com, etc.), o sistema **automaticamente** usa `onboarding@resend.dev`
 
 ---
 
@@ -122,14 +126,41 @@ MAIL_SERVER="smtp.gmail.com"
 4. Copie a chave (ela só aparece uma vez!)
 ```
 
-### **3. Verificar Domínio (Opcional, mas recomendado):**
+### **3. Verificar Domínio Próprio (Opcional, mas recomendado para produção):**
+
+**⚠️ IMPORTANTE:** Você **NÃO pode verificar domínios públicos** como:
+- ❌ gmail.com
+- ❌ yahoo.com  
+- ❌ hotmail.com
+- ❌ outlook.com
+- ❌ etc.
+
+**Você SÓ pode verificar domínios próprios** como:
+- ✅ fortlar.com.br
+- ✅ seu-dominio.com
+- ✅ exemplo.com.br
+
+**Passo a passo para verificar seu domínio próprio:**
+
 ```
-1. No Resend, vá em: "Domains"
+1. Acesse: https://resend.com/domains
 2. Clique em: "Add Domain"
-3. Digite seu domínio: fortlar.com.br
-4. Configure os registros DNS conforme instruções
-5. Aguarde verificação (pode levar alguns minutos)
+3. Digite seu domínio próprio: fortlar.com.br (NÃO use gmail.com!)
+4. O Resend mostrará os registros DNS que você precisa adicionar:
+   - Registro SPF (TXT)
+   - Registro DKIM (TXT) 
+   - Registro DMARC (TXT) - opcional
+5. Acesse o painel do seu provedor de domínio (onde você comprou fortlar.com.br)
+6. Adicione os registros DNS conforme as instruções do Resend
+7. Volte ao Resend e clique em "Verify"
+8. Aguarde verificação (pode levar alguns minutos até 24 horas)
+9. Quando verificado, você verá um ✅ verde
+10. Agora você pode usar: noreply@fortlar.com.br, contato@fortlar.com.br, etc.
 ```
+
+**Alternativa (para testes rápidos):**
+- Use `onboarding@resend.dev` - funciona automaticamente, sem verificação
+- O código já detecta domínios públicos e usa este email automaticamente
 
 ### **4. Configurar no Render.com:**
 ```

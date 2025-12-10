@@ -63,7 +63,7 @@ application = FastAPI(
     redoc_url="/redoc",
     contact={
         "name": "Equipe Fortlar",
-        "email": "contato@fortlar.com",
+        "email": "vendas@fortlar.com.br",
     },
     license_info={
         "name": "MIT License",
