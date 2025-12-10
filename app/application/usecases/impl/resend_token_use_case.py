@@ -39,18 +39,29 @@ class ResendTokenUseCase(UseCase[ResendTokenRequest, None]):
 
         email = company.contatos[0].email
 
-        token = self._send_verification_email(company.id_empresa, company.email_token, email, session)
+        # Busca o token existente se houver
+        existing_token = self.email_token_repo.get_by_company_id(company.id_empresa, session)
+        if existing_token and existing_token.tipo != EmailTokenTypeEnum.VALIDACAO_EMAIL:
+            existing_token = None
 
-        return dict(message="Token reenviado com sucesso", company_id=data.company_id, token=token)
+        token = self._send_verification_email(company.id_empresa, existing_token, email, session)
+        
+        # Faz commit explícito para garantir que o token foi salvo
+        if session:
+            session.commit()
+
+        return dict(message="Token reenviado com sucesso", company_id=company.id_empresa, token=token)
 
     def _send_verification_email(self, company_id: int, email_token, email: str, session) -> str:
         """Envia email de verificação para a empresa"""
+        # Remove token existente se houver
         if email_token:
             self.email_token_repo.delete_by_company_id_and_type(
                 company_id,
                 EmailTokenTypeEnum.VALIDACAO_EMAIL,
                 session
             )
+            session.flush()  # Garante que a deleção foi persistida
 
         token = self.hash_service.generate_email_token(company_id)
 
@@ -63,6 +74,7 @@ class ResendTokenUseCase(UseCase[ResendTokenRequest, None]):
 
         # Persiste token primeiro (importante para não perder o token se email falhar)
         self.email_token_repo.create_email_token(email_token, session)
+        session.flush()  # Garante que o token foi persistido antes de enviar o email
         
         # Tenta enviar email (não quebra a aplicação se falhar)
         try:
@@ -76,7 +88,9 @@ class ResendTokenUseCase(UseCase[ResendTokenRequest, None]):
         except Exception as e:
             # Loga o erro mas não quebra a aplicação
             # O token já foi salvo, então o usuário pode solicitar reenvio novamente
-            logger.warning(f"⚠️  Erro ao enviar email de reenvio para {email}: {e}")
+            logger.error(f"❌ Erro ao enviar email de reenvio para {email}: {e}")
+            logger.error(f"   Tipo do erro: {type(e).__name__}")
+            logger.error(f"   Detalhes: {str(e)}")
             logger.info("💡 Token foi criado. O usuário pode solicitar reenvio novamente.")
 
         return token
