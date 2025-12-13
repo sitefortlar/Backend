@@ -2,10 +2,12 @@ import jwt
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 import os
+import envs
 
 class JWTService:
     def __init__(self, secret_key: Optional[str] = None, algorithm: str = "HS256", expires_minutes: int = 60*24):
-        self.secret_key = secret_key or os.getenv("JWT_SECRET_KEY", "sua_chave_secreta_aqui")
+        # Usa a mesma chave do envs.py para garantir consistência
+        self.secret_key = secret_key or os.getenv("JWT_SECRET_KEY") or envs.JWT_SECRET_KEY
         self.algorithm = algorithm
         self.expires_minutes = expires_minutes
 

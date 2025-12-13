@@ -92,5 +92,21 @@ class VerifyUserPermissionUseCase(UseCase[UserCompanyPermissionDTO, Optional[Com
 
     @staticmethod
     def __valid_token(authorization):
+        from loguru import logger
+        
         token = authorization.replace("Bearer ", "")
-        return jwt.decode(jwt=token, key=envs.JWT_SECRET_KEY, algorithms=["HS256"])
+        logger.debug(f"🔐 Tentando decodificar token com chave: {envs.JWT_SECRET_KEY[:10]}...")
+        
+        try:
+            decoded = jwt.decode(jwt=token, key=envs.JWT_SECRET_KEY, algorithms=["HS256"])
+            logger.debug(f"✅ Token decodificado com sucesso: {decoded}")
+            return decoded
+        except ExpiredSignatureError as e:
+            logger.error(f"❌ Token expirado: {e}")
+            raise
+        except InvalidTokenError as e:
+            logger.error(f"❌ Token inválido: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Erro ao decodificar token: {type(e).__name__} - {e}")
+            raise InvalidTokenError(f"Erro ao decodificar token: {e}")
