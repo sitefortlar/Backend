@@ -112,13 +112,15 @@ class CreateCompanyUseCase(UseCase[CompanyRequest, CompanyResponse]):
         company.contatos.append(contact)
 
         # Persiste no banco
-        company_id = self.company_repo.create_company_with_address_and_contact(company, session)
+        self.company_repo.create_company_with_address_and_contact(company, session)
+        
+        # Após criar a company, o id_empresa é gerado automaticamente
+        company_id = company.id_empresa
 
         # Envia email de verificação
         self._send_verification_email(company_id, request.contato.email.__str__(), session)
 
         # Retorna resposta
-        company = self.company_repo.get_by_id(company_id, session=session)
         return _build_company_response(company)
 
     def _validate_request(self, request: CompanyRequest, session) -> None:
@@ -169,8 +171,17 @@ class CreateCompanyUseCase(UseCase[CompanyRequest, CompanyResponse]):
         # Tenta enviar email (não quebra a aplicação se falhar)
         try:
             # Gera HTML do email
-            link = f"https://vendas.fortlar.com.br/confirmar-cadastro?token={token}&companyId={company_id}"
+            from urllib.parse import urlencode
+            params = {
+                'token': token,
+                'companyId': str(company_id)
+            }
+            link = f"https://vendas.fortlar.com.br/confirmar-cadastro?{urlencode(params)}"
             html = verification(link, token)
+            
+            # Log para debug
+            logger.info(f"🔗 Link de verificação gerado: {link}")
+            logger.info(f"📧 Enviando email para {email} com companyId={company_id}")
             
             # Envia email (pode falhar na Render se SMTP estiver bloqueado)
             self.email_service.send_email(email, html, "Primeiro Acesso")

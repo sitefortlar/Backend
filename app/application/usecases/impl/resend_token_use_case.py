@@ -79,8 +79,17 @@ class ResendTokenUseCase(UseCase[ResendTokenRequest, None]):
         # Tenta enviar email (não quebra a aplicação se falhar)
         try:
             # Gera HTML do email
-            link = f"https://vendas.fortlar.com.br/confirmar-cadastro?token={token}&companyId={company_id}"
+            from urllib.parse import urlencode
+            params = {
+                'token': token,
+                'companyId': str(company_id)
+            }
+            link = f"https://vendas.fortlar.com.br/confirmar-cadastro?{urlencode(params)}"
             html = verification(link, token)
+
+            # Log para debug
+            logger.info(f"🔗 Link de verificação gerado: {link}")
+            logger.info(f"📧 Enviando email para {email} com companyId={company_id}")
 
             # Envia email (pode falhar na Render se SMTP estiver bloqueado)
             self.email_service.send_email(email, html, "Reenvio de Token de Validação")
