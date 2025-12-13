@@ -59,16 +59,23 @@ class VerifyUserPermissionUseCase(UseCase[UserCompanyPermissionDTO, Optional[Com
                     logger.error(f"❌ Token não contém role")
                     raise HTTPException(status_code=401, detail=messages['msg_not_allowed_user'])
                 
-                # Compara usando .value para garantir comparação correta
-                if token_role.value != expected_role.value:
-                    logger.error(f"❌ Role do token ({token_role.value}) não corresponde à role esperada ({expected_role.value})")
+                # ADMIN tem acesso a tudo (pode acessar endpoints de CLIENTE e ADMIN)
+                # CLIENTE só pode acessar endpoints de CLIENTE
+                user_has_permission = False
+                if company.perfil == RoleEnum.ADMIN:
+                    # ADMIN pode acessar qualquer endpoint
+                    user_has_permission = True
+                    logger.debug(f"✅ ADMIN tem acesso a todos os endpoints")
+                elif company.perfil == expected_role:
+                    # CLIENTE só pode acessar endpoints de CLIENTE
+                    user_has_permission = True
+                    logger.debug(f"✅ {company.perfil.value} tem permissão para acessar endpoint de {expected_role.value}")
+                else:
+                    user_has_permission = False
+                    logger.error(f"❌ {company.perfil.value} não tem permissão para acessar endpoint de {expected_role.value}")
+                
+                if not user_has_permission:
                     raise HTTPException(status_code=401, detail=messages['msg_not_allowed_user'])
-            
-            # Verifica se a role do banco corresponde à role esperada (fonte da verdade)
-            # A role do banco é a fonte da verdade, não a do token
-            if expected_role and company.perfil.value != expected_role.value:
-                logger.error(f"❌ Role do banco ({company.perfil.value}) não corresponde à role esperada ({expected_role.value})")
-                raise HTTPException(status_code=401, detail=messages['msg_not_allowed_user'])
             
             # Verifica consistência entre token e banco (opcional, apenas para segurança)
             if token_role and company.perfil.value != token_role.value:
