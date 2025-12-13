@@ -20,7 +20,8 @@ class LoginUseCase:
         # Gera token JWT
         token = self.jwt_service.generate_token({
             "sub": str(company.id_empresa),
-            "email": company.contatos[0].email if company.contatos else company.email
+            "email": company.contatos[0].email if company.contatos else company.email,
+            "role": company.perfil.value  # Inclui a role no token
         })
 
         return LoginResponse(access_token=token)

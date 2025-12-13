@@ -26,15 +26,32 @@ class VerifyUserPermissionUseCase(UseCase[UserCompanyPermissionDTO, Optional[Com
         dto_user_permission_dict = data.to_dict()
 
         try:
-            data = self.__valid_token(dto_user_permission_dict['authorization'])
+            token_data = self.__valid_token(dto_user_permission_dict['authorization'])
 
-            company = self.__get_company(data, dto_user_permission_dict, session)
-            if (
-                    not company or
-                    (company.perfil == RoleEnum.CLIENTE and
-                     dto_user_permission_dict.get('user_profile') != RoleEnum.CLIENTE)
-            ):
+            company = self.__get_company(token_data, dto_user_permission_dict, session)
+            
+            if not company:
                 raise HTTPException(status_code=401, detail=messages['msg_not_allowed_user'])
+            
+            # Extrai a role do token JWT
+            token_role_str = token_data.get('role')
+            token_role = None
+            if token_role_str:
+                # Converte string para RoleEnum
+                token_role = RoleEnum(token_role_str) if isinstance(token_role_str, str) else token_role_str
+            
+            # Role esperada (passada como parâmetro no verify_user_permission)
+            expected_role = dto_user_permission_dict.get('user_profile')
+            
+            # Verifica se a role do token corresponde à role esperada
+            if expected_role:
+                if not token_role or token_role != expected_role:
+                    raise HTTPException(status_code=401, detail=messages['msg_not_allowed_user'])
+            
+            # Verifica se a role do banco corresponde à role do token (consistência)
+            if token_role and company.perfil != token_role:
+                raise HTTPException(status_code=401, detail=messages['msg_not_allowed_user'])
+            
             return CompanyDTO(company.id_empresa, company.nome_fantasia, company.perfil)
 
         except ExpiredSignatureError:
