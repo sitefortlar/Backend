@@ -79,7 +79,7 @@ class ResendTokenUseCase(UseCase[ResendTokenRequest, None]):
         # Tenta enviar email (não quebra a aplicação se falhar)
         try:
             # Gera HTML do email
-            link = f"https://vendas.fortlar.com.br/confirmar-cadastro?token={token}"
+            link = f"https://vendas.fortlar.com.br/confirmar-cadastro?token={token}&companyId={company_id}"
             html = verification(link, token)
 
             # Envia email (pode falhar na Render se SMTP estiver bloqueado)

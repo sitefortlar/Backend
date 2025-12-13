@@ -28,6 +28,8 @@ class LoginUseCase:
 
     def __valid_company(self, login, session: Session = None ):
         company = self.company_repo.find_by_email_or_cnpj(login,session)
+        if not company:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais inválidas")
         if not company.ativo:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Confirmacao de Email pendente")
         return company
