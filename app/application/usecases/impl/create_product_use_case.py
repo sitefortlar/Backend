@@ -375,42 +375,50 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         })
                         continue
                     
-                    # Faz download da imagem
-                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo download do Google Drive")
-                    image_bytes = self.drive_service.download_image(download_url)
-                    if not image_bytes:
-                        logger.error(f"Produto {produto.codigo}, Imagem {idx}: Falha no download da imagem")
-                        summary["errors"].append({
-                            "type": "imagem",
-                            "product_codigo": produto.codigo,
-                            "error": f"Falha no download da imagem: {download_url[:50]}..."
-                        })
-                        continue
+                    # Verifica se a URL já é do Supabase
+                    is_supabase_url = 'supabase.co' in download_url or 'supabase' in download_url.lower()
                     
-                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: Download concluído ({len(image_bytes)} bytes)")
-                    
-                    # Define nome do arquivo no Supabase
-                    if len(unique_urls) == 1:
-                        file_name = f"{produto.codigo}.jpg"
+                    if is_supabase_url:
+                        # URL já é do Supabase, não precisa fazer download/upload
+                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: URL já é do Supabase, usando diretamente")
+                        supabase_url = download_url
                     else:
-                        file_name = f"{produto.codigo}_{idx}.jpg"
-                    
-                    # Faz upload para o Supabase
-                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo upload para Supabase")
-                    supabase_url = self.supabase_service.upload_image(
-                        file_name=file_name,
-                        file_bytes=image_bytes,
-                        content_type="image/jpeg"
-                    )
-                    
-                    if not supabase_url:
-                        logger.error(f"Produto {produto.codigo}, Imagem {idx}: Não foi possível fazer upload no Supabase")
-                        summary["errors"].append({
-                            "type": "imagem",
-                            "product_codigo": produto.codigo,
-                            "error": f"Falha no upload para Supabase"
-                        })
-                        continue
+                        # Faz download da imagem do Google Drive
+                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo download do Google Drive")
+                        image_bytes = self.drive_service.download_image(download_url)
+                        if not image_bytes:
+                            logger.error(f"Produto {produto.codigo}, Imagem {idx}: Falha no download da imagem")
+                            summary["errors"].append({
+                                "type": "imagem",
+                                "product_codigo": produto.codigo,
+                                "error": f"Falha no download da imagem: {download_url[:50]}..."
+                            })
+                            continue
+                        
+                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Download concluído ({len(image_bytes)} bytes)")
+                        
+                        # Define nome do arquivo no Supabase
+                        if len(unique_urls) == 1:
+                            file_name = f"{produto.codigo}.jpg"
+                        else:
+                            file_name = f"{produto.codigo}_{idx}.jpg"
+                        
+                        # Faz upload para o Supabase
+                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo upload para Supabase")
+                        supabase_url = self.supabase_service.upload_image(
+                            file_name=file_name,
+                            file_bytes=image_bytes,
+                            content_type="image/jpeg"
+                        )
+                        
+                        if not supabase_url:
+                            logger.error(f"Produto {produto.codigo}, Imagem {idx}: Não foi possível fazer upload no Supabase")
+                            summary["errors"].append({
+                                "type": "imagem",
+                                "product_codigo": produto.codigo,
+                                "error": f"Falha no upload para Supabase"
+                            })
+                            continue
                     
                     # Verifica se já existe esta URL do Supabase no banco
                     existing_image = self.product_image_repository.get_by_url(supabase_url, session)

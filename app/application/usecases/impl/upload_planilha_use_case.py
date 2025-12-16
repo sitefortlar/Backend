@@ -141,32 +141,40 @@ class UploadPlanilhaUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                                 linha_errors += 1
                                 continue
                             
-                            # Faz download da imagem
-                            image_bytes = self.drive_service.download_image(download_url)
-                            if not image_bytes:
-                                logger.error(f"Linha {index + 1}, Imagem {img_idx}: Falha no download da imagem")
-                                linha_errors += 1
-                                continue
+                            # Verifica se a URL já é do Supabase
+                            is_supabase_url = 'supabase.co' in download_url or 'supabase' in download_url.lower()
                             
-                            logger.info(f"Linha {index + 1}, Imagem {img_idx}: Download concluído ({len(image_bytes)} bytes)")
-                            
-                            # Define nome do arquivo no Supabase (formato: produtos/codigo_1.jpg, codigo_2.jpg, etc.)
-                            if len(image_urls) == 1:
-                                file_name = f"{codigo}.jpg"
+                            if is_supabase_url:
+                                # URL já é do Supabase, não precisa fazer download/upload
+                                logger.info(f"Linha {index + 1}, Imagem {img_idx}: URL já é do Supabase, usando diretamente")
+                                supabase_url = download_url
                             else:
-                                file_name = f"{codigo}_{img_idx}.jpg"
-                            
-                            # Faz upload para o Supabase
-                            supabase_url = self.supabase_service.upload_image(
-                                file_name=file_name,
-                                file_bytes=image_bytes,
-                                content_type="image/jpeg"
-                            )
-                            
-                            if not supabase_url:
-                                logger.error(f"Linha {index + 1}, Imagem {img_idx}: Não foi possível fazer upload no Supabase")
-                                linha_errors += 1
-                                continue
+                                # Faz download da imagem do Google Drive
+                                image_bytes = self.drive_service.download_image(download_url)
+                                if not image_bytes:
+                                    logger.error(f"Linha {index + 1}, Imagem {img_idx}: Falha no download da imagem")
+                                    linha_errors += 1
+                                    continue
+                                
+                                logger.info(f"Linha {index + 1}, Imagem {img_idx}: Download concluído ({len(image_bytes)} bytes)")
+                                
+                                # Define nome do arquivo no Supabase (formato: produtos/codigo_1.jpg, codigo_2.jpg, etc.)
+                                if len(image_urls) == 1:
+                                    file_name = f"{codigo}.jpg"
+                                else:
+                                    file_name = f"{codigo}_{img_idx}.jpg"
+                                
+                                # Faz upload para o Supabase
+                                supabase_url = self.supabase_service.upload_image(
+                                    file_name=file_name,
+                                    file_bytes=image_bytes,
+                                    content_type="image/jpeg"
+                                )
+                                
+                                if not supabase_url:
+                                    logger.error(f"Linha {index + 1}, Imagem {img_idx}: Não foi possível fazer upload no Supabase")
+                                    linha_errors += 1
+                                    continue
                             
                             supabase_urls.append(supabase_url)
                             linha_success += 1

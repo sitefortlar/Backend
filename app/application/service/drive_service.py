@@ -19,14 +19,20 @@ class DriveService:
         - https://drive.google.com/open?id=FILE_ID
         - https://drive.google.com/uc?id=FILE_ID
         - https://drive.google.com/file/d/FILE_ID/edit
+        - URLs do Supabase (retorna como está)
         
         Args:
-            google_drive_url: URL do Google Drive
+            google_drive_url: URL do Google Drive ou Supabase
             
         Returns:
             URL de download direto ou None se não conseguir extrair o ID
         """
         try:
+            # Verifica se já é uma URL do Supabase
+            if 'supabase.co' in google_drive_url or 'supabase' in google_drive_url.lower():
+                logger.debug(f"URL já é do Supabase, retornando como está: {google_drive_url[:80]}...")
+                return google_drive_url
+            
             # Padrão 1: /file/d/FILE_ID/
             match = re.search(r'/file/d/([a-zA-Z0-9_-]+)', google_drive_url)
             if match:
