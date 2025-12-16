@@ -258,20 +258,47 @@ class SupabaseService:
         """
         Gera URL pública de um arquivo no Supabase Storage
         
+        CAMINHO 3: NUNCA constrói URL manualmente - apenas usa URLs que o SDK retorna
+        Se o arquivo não existe no Storage, retorna None (não gera URL fantasma)
+        
         Args:
             path: Caminho do arquivo (ex: produtos/123.jpg)
             
         Returns:
-            URL pública do arquivo
+            URL pública do arquivo ou None se não conseguir obter
         """
         try:
-            # Usa o método do SDK para obter a URL pública
+            # CAMINHO 3: Usa APENAS o método do SDK - fonte única da verdade
             public_url = self.client.storage.from_(self.bucket).get_public_url(path)
-            logger.debug(f"URL pública gerada para {path}: {public_url}")
+            logger.debug(f"URL pública obtida do Storage para {path}: {public_url}")
             return public_url
         except Exception as e:
-            logger.error(f"Erro ao gerar URL pública para {path}: {e}")
-            # Fallback: constrói URL manualmente
-            project_id = self.url.split("//")[1].split(".")[0]
-            return f"https://{project_id}.supabase.co/storage/v1/object/public/{self.bucket}/{path}"
+            logger.error(f"❌ Erro ao obter URL pública do Storage para {path}: {e}")
+            logger.error("CAMINHO 3: Não gerando URL manualmente - arquivo pode não existir no Storage")
+            # CAMINHO 3: Retorna None em vez de construir URL fantasma
+            return None
+    
+    def file_exists(self, path: str) -> bool:
+        """
+        Verifica se um arquivo existe no Supabase Storage
+        
+        CAMINHO 1: Storage é a fonte única da verdade
+        Se o arquivo não está no Storage, ele não existe
+        
+        Args:
+            path: Caminho do arquivo (ex: produtos/123.jpg)
+            
+        Returns:
+            True se o arquivo existe, False caso contrário
+        """
+        try:
+            # Tenta listar o arquivo específico
+            files = self.client.storage.from_(self.bucket).list(path=path)
+            # Se retornou algo, o arquivo existe
+            exists = len(files) > 0
+            logger.debug(f"Verificação de existência para {path}: {'existe' if exists else 'não existe'}")
+            return exists
+        except Exception as e:
+            logger.warning(f"Erro ao verificar existência do arquivo {path}: {e}")
+            return False
 

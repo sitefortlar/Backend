@@ -392,11 +392,32 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                     is_supabase_url = 'supabase.co' in download_url or 'supabase' in download_url.lower()
                     
                     if is_supabase_url:
-                        # URL já é do Supabase, não precisa fazer download/upload
-                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: URL já é do Supabase, usando diretamente")
+                        # CAMINHO 5: URL já é do Supabase - apenas valida existência
+                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: URL já é do Supabase, validando existência no Storage")
                         supabase_url = download_url
+                        
+                        # CAMINHO 1: Verifica se o arquivo realmente existe no Storage
+                        try:
+                            # A URL do Supabase tem formato: https://.../storage/v1/object/public/bucket/path
+                            # Extrai o path após o bucket
+                            if f"/{self.supabase_service.bucket}/" in supabase_url:
+                                path = supabase_url.split(f"/{self.supabase_service.bucket}/")[-1]
+                                if not self.supabase_service.file_exists(path):
+                                    logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ URL do Supabase mas arquivo não existe no Storage!")
+                                    logger.error(f"CAMINHO 1: Storage é fonte única - arquivo não existe, não registrando no banco")
+                                    summary["errors"].append({
+                                        "type": "imagem",
+                                        "product_codigo": produto.codigo,
+                                        "error": f"URL do Supabase mas arquivo não encontrado no Storage"
+                                    })
+                                    continue
+                                else:
+                                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ Arquivo confirmado no Storage")
+                        except Exception as verify_error:
+                            logger.warning(f"Produto {produto.codigo}, Imagem {idx}: Não foi possível verificar existência no Storage: {verify_error}")
+                            # Continua mesmo assim, pois a URL é do Supabase
                     else:
-                        # Faz download da imagem do Google Drive
+                        # CAMINHO 5: Faz download da imagem do Google Drive e upload para Supabase
                         logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo download do Google Drive")
                         image_bytes = self.drive_service.download_image(download_url)
                         if not image_bytes:
@@ -416,37 +437,61 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         else:
                             file_name = f"{produto.codigo}_{idx}.jpg"
                         
-                    # Faz upload para o Supabase
-                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo upload para Supabase")
-                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: Tamanho do arquivo: {len(image_bytes)} bytes")
-                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: Nome do arquivo: {file_name}")
-                    
-                    try:
-                        supabase_url = self.supabase_service.upload_image(
-                            file_name=file_name,
-                            file_bytes=image_bytes,
-                            content_type="image/jpeg"
-                        )
+                        # CAMINHO 2: Faz upload para o Supabase Storage
+                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo upload para Supabase Storage")
+                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Tamanho do arquivo: {len(image_bytes)} bytes")
+                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Nome do arquivo: {file_name}")
                         
-                        if not supabase_url:
-                            logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Upload retornou None - Não foi possível fazer upload no Supabase")
+                        try:
+                            supabase_url = self.supabase_service.upload_image(
+                                file_name=file_name,
+                                file_bytes=image_bytes,
+                                content_type="image/jpeg"
+                            )
+                            
+                            if not supabase_url:
+                                logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Upload retornou None - Não foi possível fazer upload no Supabase")
+                                logger.error(f"CAMINHO 6: Upload falhou - não registrando URL no banco")
+                                summary["errors"].append({
+                                    "type": "imagem",
+                                    "product_codigo": produto.codigo,
+                                    "error": f"Falha no upload para Supabase (retornou None)"
+                                })
+                                continue
+                            
+                            # CAMINHO 6: Valida que a URL foi realmente criada no Storage
+                            logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ Upload concluído com sucesso: {supabase_url[:80]}...")
+                            
+                            # CAMINHO 1: Verifica se o arquivo realmente existe no Storage antes de registrar
+                            try:
+                                # A URL do Supabase tem formato: https://.../storage/v1/object/public/bucket/path
+                                # Extrai o path após o bucket
+                                if f"/{self.supabase_service.bucket}/" in supabase_url:
+                                    path = supabase_url.split(f"/{self.supabase_service.bucket}/")[-1]
+                                    if not self.supabase_service.file_exists(path):
+                                        logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Arquivo não encontrado no Storage após upload!")
+                                        logger.error(f"CAMINHO 1: Storage é fonte única - arquivo não existe, não registrando no banco")
+                                        summary["errors"].append({
+                                            "type": "imagem",
+                                            "product_codigo": produto.codigo,
+                                            "error": f"Arquivo não encontrado no Storage após upload"
+                                        })
+                                        continue
+                                    else:
+                                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ Arquivo confirmado no Storage")
+                            except Exception as verify_error:
+                                logger.warning(f"Produto {produto.codigo}, Imagem {idx}: Não foi possível verificar existência no Storage: {verify_error}")
+                                # Continua mesmo assim, pois o upload retornou URL válida
+                        except Exception as upload_error:
+                            logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Exceção durante upload: {upload_error}", exc_info=True)
                             summary["errors"].append({
                                 "type": "imagem",
                                 "product_codigo": produto.codigo,
-                                "error": f"Falha no upload para Supabase (retornou None)"
+                                "error": f"Exceção no upload: {str(upload_error)}"
                             })
                             continue
-                        else:
-                            logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ Upload concluído com sucesso: {supabase_url[:80]}...")
-                    except Exception as upload_error:
-                        logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Exceção durante upload: {upload_error}", exc_info=True)
-                        summary["errors"].append({
-                            "type": "imagem",
-                            "product_codigo": produto.codigo,
-                            "error": f"Exceção no upload: {str(upload_error)}"
-                        })
-                        continue
                     
+                    # CAMINHO 6: Ordem correta - Upload feito, arquivo existe, agora registra no banco
                     # Verifica se já existe esta URL do Supabase no banco
                     existing_image = self.product_image_repository.get_by_url(supabase_url, session)
                     if existing_image and existing_image.id_produto == produto.id_produto:
@@ -454,17 +499,19 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         processed_supabase_urls.add(supabase_url)
                         continue
                     
-                    # Salva a URL do Supabase no banco de dados
+                    # CAMINHO 4: Registra URL no banco (tabela imagens_produto é o ponto único)
+                    # CAMINHO 1: Só registra URLs que existem no Storage (já validado acima)
                     product_image = ProductImage(
                         id_produto=produto.id_produto,
-                        url=supabase_url  # Salva URL do Supabase, não do Google Drive
+                        url=supabase_url  # CAMINHO 1: URL que existe no Storage (fonte única)
                     )
                     created_image = self.product_image_repository.create(product_image, session)
                     created_count += 1
                     summary["imagens_created"] += 1
                     processed_supabase_urls.add(supabase_url)
                     
-                    logger.info(f"Criado registro ProductImage ID {created_image.id_imagem} para produto {produto.codigo} - Supabase URL {idx}/{len(unique_urls)}: {supabase_url[:80]}...")
+                    logger.info(f"✅ CAMINHO 6: Registrado no banco - ProductImage ID {created_image.id_imagem} para produto {produto.codigo}")
+                    logger.info(f"   URL: {supabase_url[:80]}...")
                     
                 except Exception as e:
                     logger.error(f"Erro ao processar imagem {idx} do produto {produto.codigo}: {e}", exc_info=True)
@@ -588,7 +635,8 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                 logger.warning("Coluna de código não encontrada, não é possível atualizar URLs")
                 return None
             
-            # Para cada linha, busca URLs do Supabase do banco
+            # CAMINHO 3: Cursor NUNCA gera URL - apenas lê URLs que existem no banco
+            # CAMINHO 1: Banco só referencia URLs que existem no Storage
             for index, row in df_updated.iterrows():
                 try:
                     codigo = str(row[codigo_col]).strip()
@@ -598,16 +646,22 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                     # Busca produto no banco
                     produto = self.product_repository.get_by_codigo(codigo, session)
                     if not produto:
+                        # CAMINHO 3: Produto não existe? Ignora (não gera URL)
                         continue
                     
-                    # Busca imagens do produto no banco (já são URLs do Supabase)
+                    # CAMINHO 4: Busca imagens do produto no banco (ponto único de registro)
+                    # CAMINHO 1: Essas URLs já foram validadas - existem no Storage
                     imagens = self.product_image_repository.get_by_produto(produto.id_produto, session)
                     if imagens:
-                        # Formata como array: [url1, url2, url3]
+                        # CAMINHO 3: Apenas copia URLs existentes - NUNCA constrói URL
                         supabase_urls = [img.url for img in imagens]
                         supabase_urls_str = '[' + ', '.join(supabase_urls) + ']'
                         df_updated.at[index, 'imagem_supabase'] = supabase_urls_str
-                        logger.debug(f"Produto {codigo}: {len(supabase_urls)} URL(s) do Supabase adicionada(s)")
+                        logger.debug(f"✅ CAMINHO 3: Produto {codigo}: {len(supabase_urls)} URL(s) real(is) copiada(s) do banco")
+                    else:
+                        # CAMINHO 3: Sem imagem? Deixa vazio (não gera URL padrão)
+                        df_updated.at[index, 'imagem_supabase'] = ''
+                        logger.debug(f"Produto {codigo}: Sem imagens no banco - deixando vazio (não gerando URL)")
                     
                 except Exception as e:
                     logger.warning(f"Erro ao atualizar linha {index + 1}: {e}")
