@@ -180,11 +180,11 @@ def _process_product_upload_async(job_id: str, file_path: str, file_format: str,
     job_service.update_job_status(job_id, JobStatus.PROCESSING, progress=0)
     
     try:
-        from app.infrastructure.configs.database_config import SessionLocal
+        from app.infrastructure.configs.database_config import Session
         from app.application.usecases.impl.create_product_use_case import CreateProductUseCase
         
-        # Cria sessão própria para o thread
-        db_session = SessionLocal()
+        # Cria sessão própria para o thread (usando Session() que é o sessionmaker)
+        db_session = Session()
         
         try:
             use_case = CreateProductUseCase()
@@ -196,6 +196,9 @@ def _process_product_upload_async(job_id: str, file_path: str, file_format: str,
             
             logger.info(f"Job {job_id}: Iniciando processamento assíncrono")
             result = use_case.execute(request, db_session)
+            
+            # Commit da transação
+            db_session.commit()
             
             # Atualiza job com resultado
             job_service.update_job_status(
@@ -215,7 +218,8 @@ def _process_product_upload_async(job_id: str, file_path: str, file_format: str,
                 JobStatus.FAILED,
                 error=str(e)
             )
-            db_session.rollback()
+            if db_session.is_active:
+                db_session.rollback()
         finally:
             db_session.close()
             # Remove arquivo temporário
