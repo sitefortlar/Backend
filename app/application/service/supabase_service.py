@@ -41,6 +41,24 @@ class SupabaseService:
         try:
             self.client: Client = create_client(self.url, self.key)
             logger.info(f"✅ Cliente Supabase inicializado com sucesso. Bucket: {self.bucket}")
+            
+            # Verifica se o bucket existe (validação opcional - não bloqueia inicialização)
+            try:
+                # Tenta listar o bucket para verificar se existe (com limite mínimo)
+                self.client.storage.from_(self.bucket).list(limit=1)
+                logger.info(f"✅ Bucket '{self.bucket}' verificado e acessível")
+            except Exception as bucket_error:
+                error_msg = str(bucket_error)
+                if "Bucket not found" in error_msg or ("404" in error_msg and "bucket" in error_msg.lower()):
+                    logger.warning(f"⚠️ Bucket '{self.bucket}' pode não existir ou não estar acessível")
+                    logger.warning(f"Verifique se o bucket existe no painel do Supabase Storage")
+                    logger.warning(f"URL: {self.url}, Bucket: {self.bucket}")
+                    logger.warning(f"O serviço continuará funcionando, mas uploads podem falhar")
+                    # Não levanta exceção - permite que o serviço continue
+                else:
+                    # Outros erros (permissões, etc) são apenas avisos
+                    logger.debug(f"Validação de bucket: {bucket_error} (não crítico)")
+                    
         except Exception as e:
             logger.error(f"❌ Erro ao inicializar cliente Supabase: {e}")
             logger.error(f"URL usada: {self.url}")
@@ -87,16 +105,33 @@ class SupabaseService:
             # Faz upload do arquivo usando o SDK conforme documentação oficial
             # O SDK aceita bytes diretamente ou um objeto file-like
             # Formato: supabase.storage.from_('bucket_name').upload('file_path', file, options)
-            response = self.client.storage.from_(self.bucket).upload(
-                path,  # file_path (primeiro parâmetro)
-                file_bytes,  # file (segundo parâmetro) - bytes diretamente
-                options  # opções como terceiro parâmetro (dicionário)
-            )
+            try:
+                response = self.client.storage.from_(self.bucket).upload(
+                    path,  # file_path (primeiro parâmetro)
+                    file_bytes,  # file (segundo parâmetro) - bytes diretamente
+                    options  # opções como terceiro parâmetro (dicionário)
+                )
+            except Exception as upload_error:
+                error_msg = str(upload_error)
+                if "Bucket not found" in error_msg or "404" in error_msg:
+                    logger.error(f"❌ Bucket '{self.bucket}' não encontrado durante upload!")
+                    logger.error(f"Verifique se o bucket '{self.bucket}' existe no Supabase Storage")
+                    logger.error(f"Para criar: Supabase Dashboard > Storage > New bucket > Nome: {self.bucket}")
+                    raise ValueError(f"Bucket '{self.bucket}' não encontrado. Crie o bucket no Supabase Storage primeiro.")
+                raise
             
             logger.info(f"Upload realizado com sucesso. Response: {response}")
             
             # Obtém URL pública usando o método do SDK
             public_url = self.get_public_url(path)
+            
+            # Se get_public_url falhou, constrói URL manualmente (arquivo foi enviado com sucesso)
+            if not public_url:
+                logger.warning(f"get_public_url retornou None, construindo URL manualmente para {path}")
+                # Constrói URL manualmente baseado no formato padrão do Supabase
+                project_id = self.url.split("//")[1].split(".")[0]
+                public_url = f"https://{project_id}.supabase.co/storage/v1/object/public/{self.bucket}/{path}"
+                logger.info(f"URL pública construída manualmente: {public_url}")
             
             logger.info(f"URL pública gerada: {public_url}")
             return public_url
@@ -109,6 +144,13 @@ class SupabaseService:
             except Exception:
                 error_msg = "Erro desconhecido"
                 error_repr = str(type(e))
+            
+            # Detecta erros de bucket não encontrado
+            if "Bucket not found" in error_msg or ("404" in error_msg and "bucket" in error_msg.lower()):
+                logger.error(f"❌ Bucket '{self.bucket}' não encontrado durante upload de imagem!")
+                logger.error(f"Verifique se o bucket '{self.bucket}' existe no Supabase Storage")
+                logger.error(f"Para criar: Supabase Dashboard > Storage > New bucket > Nome: {self.bucket}")
+                return None
             
             # Detecta erros de autenticação (chave inválida)
             if "Invalid Compact JWS" in error_msg or "Unauthorized" in error_msg or ("403" in error_msg and "statusCode" in error_repr):
@@ -157,16 +199,33 @@ class SupabaseService:
             }
             
             # Faz upload do arquivo usando o SDK conforme documentação oficial
-            response = self.client.storage.from_(self.bucket).upload(
-                path,  # file_path (primeiro parâmetro)
-                file_bytes,  # file (segundo parâmetro) - bytes diretamente
-                options  # opções como terceiro parâmetro (dicionário)
-            )
+            try:
+                response = self.client.storage.from_(self.bucket).upload(
+                    path,  # file_path (primeiro parâmetro)
+                    file_bytes,  # file (segundo parâmetro) - bytes diretamente
+                    options  # opções como terceiro parâmetro (dicionário)
+                )
+            except Exception as upload_error:
+                error_msg = str(upload_error)
+                if "Bucket not found" in error_msg or "404" in error_msg:
+                    logger.error(f"❌ Bucket '{self.bucket}' não encontrado durante upload de arquivo!")
+                    logger.error(f"Verifique se o bucket '{self.bucket}' existe no Supabase Storage")
+                    logger.error(f"Para criar: Supabase Dashboard > Storage > New bucket > Nome: {self.bucket}")
+                    raise ValueError(f"Bucket '{self.bucket}' não encontrado. Crie o bucket no Supabase Storage primeiro.")
+                raise
             
             logger.info(f"Upload realizado com sucesso. Response: {response}")
             
             # Obtém URL pública usando o método do SDK
             public_url = self.get_public_url(path)
+            
+            # Se get_public_url falhou, constrói URL manualmente (arquivo foi enviado com sucesso)
+            if not public_url:
+                logger.warning(f"get_public_url retornou None, construindo URL manualmente para {path}")
+                # Constrói URL manualmente baseado no formato padrão do Supabase
+                project_id = self.url.split("//")[1].split(".")[0]
+                public_url = f"https://{project_id}.supabase.co/storage/v1/object/public/{self.bucket}/{path}"
+                logger.info(f"URL pública construída manualmente: {public_url}")
             
             logger.info(f"URL pública gerada: {public_url}")
             return public_url
@@ -179,6 +238,13 @@ class SupabaseService:
             except Exception:
                 error_msg = "Erro desconhecido"
                 error_repr = str(type(e))
+            
+            # Detecta erros de bucket não encontrado
+            if "Bucket not found" in error_msg or ("404" in error_msg and "bucket" in error_msg.lower()):
+                logger.error(f"❌ Bucket '{self.bucket}' não encontrado durante upload de arquivo!")
+                logger.error(f"Verifique se o bucket '{self.bucket}' existe no Supabase Storage")
+                logger.error(f"Para criar: Supabase Dashboard > Storage > New bucket > Nome: {self.bucket}")
+                return None
             
             # Detecta erros de autenticação (chave inválida)
             if "Invalid Compact JWS" in error_msg or "Unauthorized" in error_msg or ("403" in error_msg and "statusCode" in error_repr):
@@ -273,7 +339,13 @@ class SupabaseService:
             logger.debug(f"URL pública obtida do Storage para {path}: {public_url}")
             return public_url
         except Exception as e:
-            logger.error(f"❌ Erro ao obter URL pública do Storage para {path}: {e}")
+            error_msg = str(e)
+            if "Bucket not found" in error_msg or ("404" in error_msg and "bucket" in error_msg.lower()):
+                logger.error(f"❌ Bucket '{self.bucket}' não encontrado ao obter URL pública")
+                logger.error(f"Verifique se o bucket '{self.bucket}' existe no Supabase Storage")
+                logger.error(f"URL: {self.url}")
+            else:
+                logger.error(f"❌ Erro ao obter URL pública do Storage para {path}: {e}")
             logger.error("CAMINHO 3: Não gerando URL manualmente - arquivo pode não existir no Storage")
             # CAMINHO 3: Retorna None em vez de construir URL fantasma
             return None

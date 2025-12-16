@@ -11,7 +11,7 @@ import logging
 from app.application.usecases.use_case import UseCase
 from app.application.service.excel_loader_service import ExcelLoaderService
 from app.application.service.drive_service import DriveService
-from app.application.service.supabase_service import SupabaseService
+from app.application.service.local_image_service import LocalImageService
 from app.infrastructure.repositories.product_repository_interface import IProductRepository
 from app.infrastructure.repositories.category_repository_interface import ICategoryRepository
 from app.infrastructure.repositories.subcategory_repository_interface import ISubcategoryRepository
@@ -33,7 +33,7 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
     def __init__(self):
         self.loader = ExcelLoaderService()
         self.drive_service = DriveService()
-        self.supabase_service = SupabaseService()
+        self.local_image_service = LocalImageService()
         self.product_repository: IProductRepository = ProductRepositoryImpl()
         self.category_repository: ICategoryRepository = CategoryRepositoryImpl()
         self.subcategory_repository: ISubcategoryRepository = SubcategoryRepositoryImpl()
@@ -151,13 +151,13 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                 detail=f"Erro ao processar planilha: {str(e)}"
             )
 
-        # Gera planilha atualizada com URLs do Supabase e faz upload
+        # Gera planilha atualizada com URLs locais das imagens
         excel_url = None
         try:
-            logger.info("Gerando planilha atualizada com URLs do Supabase")
+            logger.info("Gerando planilha atualizada com URLs locais das imagens")
             excel_url = self._generate_updated_excel(file_path, df, detected_format, session)
             if excel_url:
-                logger.info(f"Planilha atualizada salva no Supabase: {excel_url}")
+                logger.info(f"Planilha atualizada gerada: {excel_url}")
         except Exception as e:
             logger.error(f"Erro ao gerar planilha atualizada: {e}", exc_info=True)
             # Não falha o processo se houver erro na geração da planilha
@@ -323,10 +323,11 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
     def _process_product_images(self, produto: Product, image_urls: List[str], session: Session, summary: Dict[str, Any]):
         """
         Processa as imagens do produto:
-        1. Faz download das imagens do Google Drive
-        2. Faz upload para Supabase Storage
-        3. Salva a URL do Supabase no banco de dados
+        1. Faz download das imagens do Google Drive (somente URLs diferentes)
+        2. Salva localmente em assets/produtos/
+        3. Salva a URL local no banco de dados
         Cada URL do array cria um objeto novo na tabela imagens_produto.
+        REGRA: Baixa somente imagens de URLs diferentes (evita duplicatas).
         """
         if not image_urls:
             logger.debug(f"Produto {produto.codigo} sem imagens para processar")
@@ -335,31 +336,29 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
         try:
             logger.info(f"🖼️  Processando {len(image_urls)} URL(s) de imagem para o produto {produto.codigo} (ID: {produto.id_produto})")
             
-            # Verifica se o SupabaseService está inicializado
-            if not hasattr(self, 'supabase_service') or self.supabase_service is None:
-                logger.error(f"❌ SupabaseService não está inicializado para produto {produto.codigo}")
+            # Verifica se o LocalImageService está inicializado
+            if not hasattr(self, 'local_image_service') or self.local_image_service is None:
+                logger.error(f"❌ LocalImageService não está inicializado para produto {produto.codigo}")
                 summary["errors"].append({
                     "type": "imagem",
                     "product_codigo": produto.codigo,
-                    "error": "SupabaseService não está inicializado"
+                    "error": "LocalImageService não está inicializado"
                 })
                 return
             
-            # Busca imagens existentes do produto usando o repository
+            # Busca imagens existentes do produto
             existing_images = self.product_image_repository.get_by_produto(produto.id_produto, session)
+            existing_urls = {img.url for img in existing_images}
             
-            # Remove duplicatas mantendo a ordem (para logs consistentes)
+            # Remove duplicatas mantendo a ordem (REGRA: processa somente URLs diferentes)
             unique_urls = list(dict.fromkeys(image_urls))
             
-            logger.debug(f"Produto {produto.codigo}: {len(existing_images)} imagem(ns) existente(s), {len(unique_urls)} URL(s) para processar")
+            logger.debug(f"Produto {produto.codigo}: {len(existing_images)} imagem(ns) existente(s), {len(unique_urls)} URL(s) única(s) para processar")
             
-            # Remove imagens que não estão mais na lista usando o repository
-            # Como agora salvamos URLs do Supabase, precisamos verificar se a URL do Drive corresponde
-            # Para isso, vamos processar todas as novas URLs e depois remover as que não foram processadas
-            processed_supabase_urls = set()
-            
-            # Adiciona novas imagens - Processa cada URL do Google Drive e faz upload para Supabase
+            # Processa cada URL única
             created_count = 0
+            processed_local_urls = set()
+            
             for idx, drive_url in enumerate(unique_urls, start=1):
                 drive_url_clean = drive_url.strip()
                 
@@ -371,10 +370,6 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                 if not (drive_url_clean.startswith('http://') or drive_url_clean.startswith('https://')):
                     logger.warning(f"URL de imagem inválida para produto {produto.codigo} (posição {idx}): {drive_url_clean[:80]}...")
                     continue
-                
-                # Verifica se já existe uma imagem com esta URL do Drive processada anteriormente
-                # Como salvamos URLs do Supabase no banco, não podemos comparar diretamente
-                # Vamos processar todas as URLs e o banco evitará duplicatas por URL única
                 
                 try:
                     # Converte link do Google Drive para formato de download
@@ -388,95 +383,90 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         })
                         continue
                     
-                    # Verifica se a URL já é do Supabase
-                    is_supabase_url = 'supabase.co' in download_url or 'supabase' in download_url.lower()
+                    # REGRA: Verifica se a URL já é local (assets) - não precisa baixar novamente
+                    is_local_url = '/api/assets/' in download_url or download_url.startswith('/api/assets/')
                     
-                    if is_supabase_url:
-                        # CAMINHO 5: URL já é do Supabase - apenas valida existência
-                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: URL já é do Supabase, validando existência no Storage")
-                        supabase_url = download_url
+                    if is_local_url:
+                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: URL já é local, usando diretamente")
+                        local_url = download_url if download_url.startswith('/') else f"/{download_url}"
                         
-                        # CAMINHO 1: URL já é do Supabase - confiamos que existe
-                        # NOTA: Validação removida para evitar timeout/502 em processamento em massa
-                        # Se a URL é do Supabase e está no banco, assumimos que existe
-                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ URL do Supabase - assumindo que arquivo existe")
-                    else:
-                        # CAMINHO 5: Faz download da imagem do Google Drive e upload para Supabase
-                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo download do Google Drive")
-                        image_bytes = self.drive_service.download_image(download_url)
-                        if not image_bytes:
-                            logger.error(f"Produto {produto.codigo}, Imagem {idx}: Falha no download da imagem")
-                            summary["errors"].append({
-                                "type": "imagem",
-                                "product_codigo": produto.codigo,
-                                "error": f"Falha no download da imagem: {download_url[:50]}..."
-                            })
+                        # Verifica se já existe no banco para este produto
+                        if local_url in existing_urls:
+                            logger.debug(f"URL local já existe para produto {produto.codigo}, ignorando")
+                            processed_local_urls.add(local_url)
                             continue
                         
-                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Download concluído ({len(image_bytes)} bytes)")
-                        
-                        # Define nome do arquivo no Supabase
-                        if len(unique_urls) == 1:
-                            file_name = f"{produto.codigo}.jpg"
-                        else:
-                            file_name = f"{produto.codigo}_{idx}.jpg"
-                        
-                        # CAMINHO 2: Faz upload para o Supabase Storage
-                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo upload para Supabase Storage")
-                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Tamanho do arquivo: {len(image_bytes)} bytes")
-                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Nome do arquivo: {file_name}")
-                        
-                        try:
-                            supabase_url = self.supabase_service.upload_image(
-                                file_name=file_name,
-                                file_bytes=image_bytes,
-                                content_type="image/jpeg"
-                            )
-                            
-                            if not supabase_url:
-                                logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Upload retornou None - Não foi possível fazer upload no Supabase")
-                                logger.error(f"CAMINHO 6: Upload falhou - não registrando URL no banco")
-                                summary["errors"].append({
-                                    "type": "imagem",
-                                    "product_codigo": produto.codigo,
-                                    "error": f"Falha no upload para Supabase (retornou None)"
-                                })
-                                continue
-                            
-                            # CAMINHO 6: Se o upload retornou URL, confiamos que o arquivo existe
-                            # NOTA: Validação pós-upload removida para evitar timeout/502
-                            # O upload() do Supabase já valida - se retornou URL, o arquivo existe
-                            logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ Upload concluído com sucesso: {supabase_url[:80]}...")
-                        except Exception as upload_error:
-                            logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Exceção durante upload: {upload_error}", exc_info=True)
-                            summary["errors"].append({
-                                "type": "imagem",
-                                "product_codigo": produto.codigo,
-                                "error": f"Exceção no upload: {str(upload_error)}"
-                            })
-                            continue
-                    
-                    # CAMINHO 6: Ordem correta - Upload feito, arquivo existe, agora registra no banco
-                    # Verifica se já existe esta URL do Supabase no banco
-                    existing_image = self.product_image_repository.get_by_url(supabase_url, session)
-                    if existing_image and existing_image.id_produto == produto.id_produto:
-                        logger.debug(f"URL do Supabase já existe para produto {produto.codigo}, ignorando: {supabase_url[:80]}...")
-                        processed_supabase_urls.add(supabase_url)
+                        # Salva URL local no banco
+                        product_image = ProductImage(
+                            id_produto=produto.id_produto,
+                            url=local_url
+                        )
+                        created_image = self.product_image_repository.create(product_image, session)
+                        created_count += 1
+                        summary["imagens_created"] += 1
+                        processed_local_urls.add(local_url)
+                        logger.info(f"✅ Registrado no banco - ProductImage ID {created_image.id_imagem} para produto {produto.codigo}")
+                        logger.info(f"   URL: {local_url}")
                         continue
                     
-                    # CAMINHO 4: Registra URL no banco (tabela imagens_produto é o ponto único)
-                    # CAMINHO 1: Só registra URLs que existem no Storage (já validado acima)
+                    # REGRA: Faz download somente se a URL for diferente (Google Drive)
+                    # Verifica se já processamos esta URL nesta execução (evita download duplicado)
+                    if drive_url_clean in processed_local_urls:
+                        logger.debug(f"URL já processada nesta execução: {drive_url_clean[:50]}...")
+                        continue
+                    
+                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo download do Google Drive")
+                    image_bytes = self.drive_service.download_image(download_url)
+                    if not image_bytes:
+                        logger.error(f"Produto {produto.codigo}, Imagem {idx}: Falha no download da imagem")
+                        summary["errors"].append({
+                            "type": "imagem",
+                            "product_codigo": produto.codigo,
+                            "error": f"Falha no download da imagem: {download_url[:50]}..."
+                        })
+                        continue
+                    
+                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: Download concluído ({len(image_bytes)} bytes)")
+                    
+                    # Salva imagem localmente
+                    local_url = self.local_image_service.save_image_from_bytes(
+                        produto_codigo=produto.codigo,
+                        image_bytes=image_bytes,
+                        original_url=drive_url_clean,
+                        index=idx,
+                        total=len(unique_urls)
+                    )
+                    
+                    if not local_url:
+                        logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Falha ao salvar imagem localmente")
+                        summary["errors"].append({
+                            "type": "imagem",
+                            "product_codigo": produto.codigo,
+                            "error": f"Falha ao salvar imagem localmente"
+                        })
+                        continue
+                    
+                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ Imagem salva localmente: {local_url}")
+                    
+                    # Verifica se já existe esta URL local no banco para este produto
+                    existing_image = self.product_image_repository.get_by_url(local_url, session)
+                    if existing_image and existing_image.id_produto == produto.id_produto:
+                        logger.debug(f"URL local já existe para produto {produto.codigo}, ignorando: {local_url}")
+                        processed_local_urls.add(local_url)
+                        continue
+                    
+                    # Registra URL local no banco
                     product_image = ProductImage(
                         id_produto=produto.id_produto,
-                        url=supabase_url  # CAMINHO 1: URL que existe no Storage (fonte única)
+                        url=local_url  # URL local: /api/assets/produtos/123.jpg
                     )
                     created_image = self.product_image_repository.create(product_image, session)
                     created_count += 1
                     summary["imagens_created"] += 1
-                    processed_supabase_urls.add(supabase_url)
+                    processed_local_urls.add(local_url)
                     
-                    logger.info(f"✅ CAMINHO 6: Registrado no banco - ProductImage ID {created_image.id_imagem} para produto {produto.codigo}")
-                    logger.info(f"   URL: {supabase_url[:80]}...")
+                    logger.info(f"✅ Registrado no banco - ProductImage ID {created_image.id_imagem} para produto {produto.codigo}")
+                    logger.info(f"   URL: {local_url}")
                     
                 except Exception as e:
                     logger.error(f"Erro ao processar imagem {idx} do produto {produto.codigo}: {e}", exc_info=True)
@@ -487,9 +477,9 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                     })
                     continue
             
-            # Remove imagens que não estão mais na lista (URLs do Supabase que não foram processadas)
+            # Remove imagens que não estão mais na lista (URLs locais que não foram processadas)
             for img in existing_images:
-                if img.url not in processed_supabase_urls:
+                if img.url not in processed_local_urls:
                     self.product_image_repository.delete(img.id_imagem, session)
                     logger.debug(f"Removendo imagem ID {img.id_imagem} (URL: '{img.url[:80]}...') do produto {produto.codigo}")
             
@@ -516,13 +506,13 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
         deleted_counts = {
             "produtos_deletados": 0,
             "imagens_deletados": 0,
-            "imagens_supabase_deletadas": 0
+            "imagens_locais_deletadas": 0
         }
         
         try:
             logger.info("Iniciando limpeza de todos os dados de produtos")
             
-            # 1. Busca todas as imagens para obter URLs do Supabase antes de deletar
+            # 1. Busca todas as imagens antes de deletar
             all_images = self.product_image_repository.get_all(session, skip=0, limit=100000)
             deleted_counts["imagens_deletados"] = len(all_images)
             
@@ -534,17 +524,20 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
             
             logger.info(f"Deletadas {len(all_images)} imagem(ns) do banco de dados")
             
-            # 3. Deleta todas as imagens do Supabase Storage (pasta produtos/)
-            logger.info("Deletando todas as imagens do Supabase Storage (pasta produtos/)")
+            # 3. Deleta todas as imagens locais (pasta assets/produtos/)
+            logger.info("Deletando todas as imagens locais (pasta assets/produtos/)")
             try:
-                success = self.supabase_service.delete_all_images_in_folder("produtos")
-                if success:
-                    deleted_counts["imagens_supabase_deletadas"] = len(all_images)  # Aproximação
-                    logger.info("Imagens do Supabase deletadas com sucesso")
+                if hasattr(self, 'local_image_service') and self.local_image_service:
+                    success = self.local_image_service.delete_all_images()
+                    if success:
+                        deleted_counts["imagens_locais_deletadas"] = len(all_images)  # Aproximação
+                        logger.info("Imagens locais deletadas com sucesso")
+                    else:
+                        logger.warning("Alguns arquivos locais podem não ter sido deletados")
                 else:
-                    logger.warning("Alguns arquivos do Supabase podem não ter sido deletados")
+                    logger.warning("LocalImageService não está disponível para deletar imagens")
             except Exception as e:
-                logger.error(f"Erro ao deletar imagens do Supabase: {e}", exc_info=True)
+                logger.error(f"Erro ao deletar imagens locais: {e}", exc_info=True)
             
             # 4. Deleta todos os produtos do banco
             all_products = self.product_repository.get_all(session, skip=0, limit=100000)
@@ -568,7 +561,7 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
 
     def _generate_updated_excel(self, file_path: str, df_original: pd.DataFrame, format_type: str, session: Session) -> Optional[str]:
         """
-        Gera planilha atualizada com URLs do Supabase e faz upload no Supabase Storage
+        Gera planilha atualizada com URLs locais das imagens
         
         Args:
             file_path: Caminho do arquivo original
@@ -577,10 +570,10 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
             session: Sessão do banco de dados
             
         Returns:
-            URL do Excel no Supabase ou None em caso de erro
+            Caminho do arquivo Excel atualizado ou None em caso de erro
         """
         try:
-            logger.info("Iniciando geração de planilha atualizada com URLs do Supabase")
+            logger.info("Iniciando geração de planilha atualizada com URLs locais das imagens")
             
             # Cria cópia do DataFrame para modificar
             df_updated = df_original.copy()
@@ -614,19 +607,18 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         # CAMINHO 3: Produto não existe? Ignora (não gera URL)
                         continue
                     
-                    # CAMINHO 4: Busca imagens do produto no banco (ponto único de registro)
-                    # CAMINHO 1: Essas URLs já foram validadas - existem no Storage
+                    # Busca imagens do produto no banco (URLs locais)
                     imagens = self.product_image_repository.get_by_produto(produto.id_produto, session)
                     if imagens:
-                        # CAMINHO 3: Apenas copia URLs existentes - NUNCA constrói URL
-                        supabase_urls = [img.url for img in imagens]
-                        supabase_urls_str = '[' + ', '.join(supabase_urls) + ']'
-                        df_updated.at[index, 'imagem_supabase'] = supabase_urls_str
-                        logger.debug(f"✅ CAMINHO 3: Produto {codigo}: {len(supabase_urls)} URL(s) real(is) copiada(s) do banco")
+                        # Copia URLs locais existentes do banco
+                        image_urls = [img.url for img in imagens]
+                        image_urls_str = '[' + ', '.join(image_urls) + ']'
+                        df_updated.at[index, 'imagem_supabase'] = image_urls_str
+                        logger.debug(f"✅ Produto {codigo}: {len(image_urls)} URL(s) local(is) copiada(s) do banco")
                     else:
-                        # CAMINHO 3: Sem imagem? Deixa vazio (não gera URL padrão)
+                        # Sem imagem? Deixa vazio
                         df_updated.at[index, 'imagem_supabase'] = ''
-                        logger.debug(f"Produto {codigo}: Sem imagens no banco - deixando vazio (não gerando URL)")
+                        logger.debug(f"Produto {codigo}: Sem imagens no banco - deixando vazio")
                     
                 except Exception as e:
                     logger.warning(f"Erro ao atualizar linha {index + 1}: {e}")
@@ -642,16 +634,22 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
             
             logger.info(f"Arquivo Excel gerado: {len(result_bytes)} bytes")
             
-            # Faz upload do Excel para o Supabase
+            # Salva o Excel localmente na pasta assets/planilhas (opcional)
+            # NOTA: Se precisar fazer upload para Supabase, mantenha o código abaixo
+            # Por enquanto, vamos salvar localmente também
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             excel_file_name = f"produtos_atualizados_{timestamp}.xlsx"
             
-            logger.info(f"Fazendo upload do Excel atualizado para Supabase: {excel_file_name}")
-            excel_url = self.supabase_service.upload_file(
-                file_name=excel_file_name,
-                file_bytes=result_bytes,
-                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            # Salva localmente
+            planilhas_path = self.local_image_service.base_path / "planilhas"
+            planilhas_path.mkdir(parents=True, exist_ok=True)
+            excel_local_path = planilhas_path / excel_file_name
+            
+            with open(excel_local_path, 'wb') as f:
+                f.write(result_bytes)
+            
+            excel_url = f"{self.local_image_service.base_url}/planilhas/{excel_file_name}"
+            logger.info(f"Excel atualizado salvo localmente: {excel_url}")
             
             return excel_url
             

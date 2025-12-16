@@ -10,6 +10,7 @@ load_dotenv()
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 # Exceptions
@@ -105,6 +106,34 @@ application.add_middleware(
 # Ajuste de timezone
 os.environ['TZ'] = os.getenv("TZ", "America/Sao_Paulo")
 time.tzset()
+
+# ============================================================================
+# CONFIGURAÇÃO DE ARQUIVOS ESTÁTICOS (Assets)
+# ============================================================================
+# Serve arquivos estáticos da pasta assets via /api/assets
+# As imagens dos produtos serão acessíveis em: /api/assets/produtos/123.jpg
+# ============================================================================
+# Obtém o diretório raiz do projeto (3 níveis acima de fastapi_config.py)
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+assets_path = os.path.join(project_root, "assets")
+
+# Cria a estrutura de pastas se não existir
+if not os.path.exists(assets_path):
+    os.makedirs(assets_path, exist_ok=True)
+    logger.info(f"✅ Pasta assets criada: {assets_path}")
+
+produtos_path = os.path.join(assets_path, "produtos")
+if not os.path.exists(produtos_path):
+    os.makedirs(produtos_path, exist_ok=True)
+    logger.info(f"✅ Pasta produtos criada: {produtos_path}")
+
+# Monta o diretório de arquivos estáticos
+try:
+    application.mount("/api/assets", StaticFiles(directory=assets_path), name="assets")
+    logger.info(f"✅ Arquivos estáticos configurados: {assets_path}")
+    logger.info(f"   Imagens acessíveis em: /api/assets/produtos/")
+except Exception as e:
+    logger.warning(f"⚠️ Não foi possível configurar arquivos estáticos: {e}")
 
 # Incluir routers com prefixo /api
 application.include_router(login_router, prefix="/api", tags=["Autenticação"])
