@@ -3,6 +3,7 @@
 import io
 import json
 import datetime
+import hashlib
 import pandas as pd
 from typing import Dict, Any, Optional, List
 from loguru import logger
@@ -19,6 +20,19 @@ class UploadPlanilhaUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
         """Inicializa os serviços necessários"""
         self.drive_service = DriveService()
         self.supabase_service = SupabaseService()
+        # Cache do run (planilha): evita upload repetido de imagens iguais dentro do mesmo processamento
+        self._shared_image_cache: Dict[str, str] = {}
+
+    def _image_key(self, original_url: str, download_url: str) -> str:
+        file_id = self.drive_service.extract_drive_file_id(original_url) or self.drive_service.extract_drive_file_id(download_url)
+        if file_id:
+            return f"drive_{file_id}"
+        base = (download_url or original_url or "").strip()
+        h = hashlib.sha1(base.encode("utf-8")).hexdigest()
+        return f"url_{h}"
+
+    def _shared_object_path(self, key: str) -> str:
+        return f"produtos/shared/{key}.jpg"
     
     def _parse_image_urls(self, imagem_url: str) -> List[str]:
         """
@@ -149,32 +163,37 @@ class UploadPlanilhaUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                                 logger.info(f"Linha {index + 1}, Imagem {img_idx}: URL já é do Supabase, usando diretamente")
                                 supabase_url = download_url
                             else:
-                                # Faz download da imagem do Google Drive
-                                image_bytes = self.drive_service.download_image(download_url)
-                                if not image_bytes:
-                                    logger.error(f"Linha {index + 1}, Imagem {img_idx}: Falha no download da imagem")
-                                    linha_errors += 1
-                                    continue
-                                
-                                logger.info(f"Linha {index + 1}, Imagem {img_idx}: Download concluído ({len(image_bytes)} bytes)")
-                                
-                                # Define nome do arquivo no Supabase (formato: produtos/codigo_1.jpg, codigo_2.jpg, etc.)
-                                if len(image_urls) == 1:
-                                    file_name = f"{codigo}.jpg"
+                                # Dedupe dentro do processamento da planilha
+                                key = self._image_key(original_url=imagem_url, download_url=download_url)
+                                cached = self._shared_image_cache.get(key)
+                                if cached:
+                                    supabase_url = cached
+                                    logger.info(f"Linha {index + 1}, Imagem {img_idx}: Dedupe cache_hit=1")
                                 else:
-                                    file_name = f"{codigo}_{img_idx}.jpg"
-                                
-                                # Faz upload para o Supabase
-                                supabase_url = self.supabase_service.upload_image(
-                                    file_name=file_name,
-                                    file_bytes=image_bytes,
-                                    content_type="image/jpeg"
-                                )
-                                
-                                if not supabase_url:
-                                    logger.error(f"Linha {index + 1}, Imagem {img_idx}: Não foi possível fazer upload no Supabase")
-                                    linha_errors += 1
-                                    continue
+                                    object_path = self._shared_object_path(key)
+
+                                    # Faz download da imagem do Google Drive (com retry/backoff)
+                                    image_bytes, content_type = self.drive_service.download_image_with_meta(download_url)
+                                    if not image_bytes:
+                                        logger.error(f"Linha {index + 1}, Imagem {img_idx}: Falha no download da imagem")
+                                        linha_errors += 1
+                                        continue
+                                    
+                                    logger.info(f"Linha {index + 1}, Imagem {img_idx}: Download concluído ({len(image_bytes)} bytes)")
+                                    
+                                    # Faz upload para o Supabase usando path determinístico (reuso entre linhas)
+                                    supabase_url = self.supabase_service.upload_image(
+                                        file_name=object_path,
+                                        file_bytes=image_bytes,
+                                        content_type=content_type or "image/jpeg"
+                                    )
+                                    
+                                    if not supabase_url:
+                                        logger.error(f"Linha {index + 1}, Imagem {img_idx}: Não foi possível fazer upload no Supabase")
+                                        linha_errors += 1
+                                        continue
+
+                                    self._shared_image_cache[key] = supabase_url
                             
                             supabase_urls.append(supabase_url)
                             linha_success += 1

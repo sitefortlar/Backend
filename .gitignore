@@ -206,9 +206,3 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 .venv
-
-# Assets (imagens dos produtos)
-# Mantém a estrutura de pastas mas ignora os arquivos de imagem
-assets/produtos/*
-!assets/produtos/.gitkeep
-!assets/.gitkeep

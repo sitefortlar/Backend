@@ -122,16 +122,8 @@ class SupabaseService:
             
             logger.info(f"Upload realizado com sucesso. Response: {response}")
             
-            # Obtém URL pública usando o método do SDK
-            public_url = self.get_public_url(path)
-            
-            # Se get_public_url falhou, constrói URL manualmente (arquivo foi enviado com sucesso)
-            if not public_url:
-                logger.warning(f"get_public_url retornou None, construindo URL manualmente para {path}")
-                # Constrói URL manualmente baseado no formato padrão do Supabase
-                project_id = self.url.split("//")[1].split(".")[0]
-                public_url = f"https://{project_id}.supabase.co/storage/v1/object/public/{self.bucket}/{path}"
-                logger.info(f"URL pública construída manualmente: {public_url}")
+            # Obtém URL pública (sem depender de chamada remota)
+            public_url = self.public_url_for_path(path)
             
             logger.info(f"URL pública gerada: {public_url}")
             return public_url
@@ -216,20 +208,12 @@ class SupabaseService:
             
             logger.info(f"Upload realizado com sucesso. Response: {response}")
             
-            # Obtém URL pública usando o método do SDK
-            public_url = self.get_public_url(path)
-            
-            # Se get_public_url falhou, constrói URL manualmente (arquivo foi enviado com sucesso)
-            if not public_url:
-                logger.warning(f"get_public_url retornou None, construindo URL manualmente para {path}")
-                # Constrói URL manualmente baseado no formato padrão do Supabase
-                project_id = self.url.split("//")[1].split(".")[0]
-                public_url = f"https://{project_id}.supabase.co/storage/v1/object/public/{self.bucket}/{path}"
-                logger.info(f"URL pública construída manualmente: {public_url}")
+            # Obtém URL pública (sem depender de chamada remota)
+            public_url = self.public_url_for_path(path)
             
             logger.info(f"URL pública gerada: {public_url}")
             return public_url
-            
+
         except Exception as e:
             # Converte erro para string de forma segura (evita KeyError em dicionários)
             try:
@@ -262,6 +246,14 @@ class SupabaseService:
                 logger.error(f"❌ Erro ao fazer upload de arquivo no Supabase: {error_repr}")
                 logger.error(f"Tipo do erro: {type(e).__name__}")
             return None
+
+    def public_url_for_path(self, path: str) -> str:
+        """
+        Constrói a URL pública padrão do Supabase para um objeto.
+        Não faz chamadas remotas (útil para dedupe/cache).
+        """
+        clean = (path or "").lstrip("/")
+        return f"{self.url}/storage/v1/object/public/{self.bucket}/{clean}"
     
     def delete_all_images_in_folder(self, folder: str = "produtos") -> bool:
         """
