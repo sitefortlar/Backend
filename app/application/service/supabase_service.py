@@ -278,26 +278,55 @@ class SupabaseService:
             # CAMINHO 3: Retorna None em vez de construir URL fantasma
             return None
     
-    def file_exists(self, path: str) -> bool:
+    def file_exists(self, path: str, timeout: int = 5) -> bool:
         """
         Verifica se um arquivo existe no Supabase Storage
         
         CAMINHO 1: Storage é a fonte única da verdade
         Se o arquivo não está no Storage, ele não existe
         
+        NOTA: Este método pode ser lento. Use com cuidado em loops.
+        Para uploads recentes, confie no retorno do upload() em vez de validar.
+        
         Args:
             path: Caminho do arquivo (ex: produtos/123.jpg)
+            timeout: Timeout em segundos (padrão: 5)
             
         Returns:
-            True se o arquivo existe, False caso contrário
+            True se o arquivo existe, False caso contrário ou em caso de erro/timeout
         """
         try:
-            # Tenta listar o arquivo específico
-            files = self.client.storage.from_(self.bucket).list(path=path)
-            # Se retornou algo, o arquivo existe
-            exists = len(files) > 0
-            logger.debug(f"Verificação de existência para {path}: {'existe' if exists else 'não existe'}")
-            return exists
+            import signal
+            
+            # Usa timeout para evitar travar a aplicação
+            def timeout_handler(signum, frame):
+                raise TimeoutError(f"Timeout ao verificar existência do arquivo {path}")
+            
+            # Configura timeout (apenas em sistemas Unix)
+            try:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout)
+            except (AttributeError, OSError):
+                # Windows não suporta SIGALRM, ignora timeout
+                pass
+            
+            try:
+                # Tenta listar o arquivo específico
+                # NOTA: list() pode ser lento - considere usar apenas após upload
+                files = self.client.storage.from_(self.bucket).list(path=path)
+                # Se retornou algo, o arquivo existe
+                exists = len(files) > 0
+                logger.debug(f"Verificação de existência para {path}: {'existe' if exists else 'não existe'}")
+                return exists
+            finally:
+                # Cancela o alarme
+                try:
+                    signal.alarm(0)
+                except (AttributeError, OSError):
+                    pass
+        except TimeoutError:
+            logger.warning(f"Timeout ao verificar existência do arquivo {path} (>{timeout}s)")
+            return False
         except Exception as e:
             logger.warning(f"Erro ao verificar existência do arquivo {path}: {e}")
             return False

@@ -396,26 +396,10 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         logger.info(f"Produto {produto.codigo}, Imagem {idx}: URL já é do Supabase, validando existência no Storage")
                         supabase_url = download_url
                         
-                        # CAMINHO 1: Verifica se o arquivo realmente existe no Storage
-                        try:
-                            # A URL do Supabase tem formato: https://.../storage/v1/object/public/bucket/path
-                            # Extrai o path após o bucket
-                            if f"/{self.supabase_service.bucket}/" in supabase_url:
-                                path = supabase_url.split(f"/{self.supabase_service.bucket}/")[-1]
-                                if not self.supabase_service.file_exists(path):
-                                    logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ URL do Supabase mas arquivo não existe no Storage!")
-                                    logger.error(f"CAMINHO 1: Storage é fonte única - arquivo não existe, não registrando no banco")
-                                    summary["errors"].append({
-                                        "type": "imagem",
-                                        "product_codigo": produto.codigo,
-                                        "error": f"URL do Supabase mas arquivo não encontrado no Storage"
-                                    })
-                                    continue
-                                else:
-                                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ Arquivo confirmado no Storage")
-                        except Exception as verify_error:
-                            logger.warning(f"Produto {produto.codigo}, Imagem {idx}: Não foi possível verificar existência no Storage: {verify_error}")
-                            # Continua mesmo assim, pois a URL é do Supabase
+                        # CAMINHO 1: URL já é do Supabase - confiamos que existe
+                        # NOTA: Validação removida para evitar timeout/502 em processamento em massa
+                        # Se a URL é do Supabase e está no banco, assumimos que existe
+                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ URL do Supabase - assumindo que arquivo existe")
                     else:
                         # CAMINHO 5: Faz download da imagem do Google Drive e upload para Supabase
                         logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo download do Google Drive")
@@ -459,29 +443,10 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                                 })
                                 continue
                             
-                            # CAMINHO 6: Valida que a URL foi realmente criada no Storage
+                            # CAMINHO 6: Se o upload retornou URL, confiamos que o arquivo existe
+                            # NOTA: Validação pós-upload removida para evitar timeout/502
+                            # O upload() do Supabase já valida - se retornou URL, o arquivo existe
                             logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ Upload concluído com sucesso: {supabase_url[:80]}...")
-                            
-                            # CAMINHO 1: Verifica se o arquivo realmente existe no Storage antes de registrar
-                            try:
-                                # A URL do Supabase tem formato: https://.../storage/v1/object/public/bucket/path
-                                # Extrai o path após o bucket
-                                if f"/{self.supabase_service.bucket}/" in supabase_url:
-                                    path = supabase_url.split(f"/{self.supabase_service.bucket}/")[-1]
-                                    if not self.supabase_service.file_exists(path):
-                                        logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Arquivo não encontrado no Storage após upload!")
-                                        logger.error(f"CAMINHO 1: Storage é fonte única - arquivo não existe, não registrando no banco")
-                                        summary["errors"].append({
-                                            "type": "imagem",
-                                            "product_codigo": produto.codigo,
-                                            "error": f"Arquivo não encontrado no Storage após upload"
-                                        })
-                                        continue
-                                    else:
-                                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ Arquivo confirmado no Storage")
-                            except Exception as verify_error:
-                                logger.warning(f"Produto {produto.codigo}, Imagem {idx}: Não foi possível verificar existência no Storage: {verify_error}")
-                                # Continua mesmo assim, pois o upload retornou URL válida
                         except Exception as upload_error:
                             logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Exceção durante upload: {upload_error}", exc_info=True)
                             summary["errors"].append({
