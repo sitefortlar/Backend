@@ -56,5 +56,5 @@ MAIL_SERVER="smtp.gmail.com"
 
 
 SUPABASE_URL='https://zpcnvcthecltyiopstxd.supabase.co'
-SUPABASE_KEY='sb_secret_NL6zzk5OODPbigHLMyA67A_KfXPplrM'
+SUPABASE_KEY='sb_secret_vY4aYPuED_Wfe8xFHl3_6Q_bTvPAqYn'
 SUPABASE_BUCKET='products'

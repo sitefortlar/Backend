@@ -102,13 +102,29 @@ class SupabaseService:
             return public_url
             
         except Exception as e:
-            error_msg = str(e)
+            # Converte erro para string de forma segura (evita KeyError em dicionários)
+            try:
+                error_msg = str(e)
+                error_repr = repr(e)
+            except Exception:
+                error_msg = "Erro desconhecido"
+                error_repr = str(type(e))
+            
+            # Detecta erros de autenticação (chave inválida)
+            if "Invalid Compact JWS" in error_msg or "Unauthorized" in error_msg or ("403" in error_msg and "statusCode" in error_repr):
+                logger.error("❌ Erro de autenticação no Supabase: Chave inválida ou expirada")
+                logger.error(f"Verifique se a SUPABASE_KEY está correta no arquivo .env")
+                logger.error(f"URL usada: {self.url}")
+                logger.error(f"Erro completo: {error_repr}")
+                return None
+            
             # Detecta erros de DNS/conectividade
             if "Name or service not known" in error_msg or "Failed to resolve" in error_msg or "gaierror" in error_msg.lower():
-                logger.error(f"Erro de DNS/conectividade ao acessar Supabase. Verifique a conectividade de rede e a URL: {self.url}")
-                logger.error(f"Detalhes do erro: {e}", exc_info=True)
+                logger.error(f"❌ Erro de DNS/conectividade ao acessar Supabase. Verifique a conectividade de rede e a URL: {self.url}")
+                logger.error(f"Detalhes do erro: {error_repr}")
             else:
-                logger.error(f"Erro ao fazer upload no Supabase: {e}", exc_info=True)
+                logger.error(f"❌ Erro ao fazer upload de imagem no Supabase: {error_repr}")
+                logger.error(f"Tipo do erro: {type(e).__name__}")
             return None
     
     def upload_file(self, file_name: str, file_bytes: bytes, content_type: str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") -> Optional[str]:
@@ -156,13 +172,29 @@ class SupabaseService:
             return public_url
             
         except Exception as e:
-            error_msg = str(e)
+            # Converte erro para string de forma segura (evita KeyError em dicionários)
+            try:
+                error_msg = str(e)
+                error_repr = repr(e)
+            except Exception:
+                error_msg = "Erro desconhecido"
+                error_repr = str(type(e))
+            
+            # Detecta erros de autenticação (chave inválida)
+            if "Invalid Compact JWS" in error_msg or "Unauthorized" in error_msg or ("403" in error_msg and "statusCode" in error_repr):
+                logger.error("❌ Erro de autenticação no Supabase: Chave inválida ou expirada")
+                logger.error(f"Verifique se a SUPABASE_KEY está correta no arquivo .env")
+                logger.error(f"URL usada: {self.url}")
+                logger.error(f"Erro completo: {error_repr}")
+                return None
+            
             # Detecta erros de DNS/conectividade
             if "Name or service not known" in error_msg or "Failed to resolve" in error_msg or "gaierror" in error_msg.lower():
-                logger.error(f"Erro de DNS/conectividade ao acessar Supabase. Verifique a conectividade de rede e a URL: {self.url}")
-                logger.error(f"Detalhes do erro: {e}", exc_info=True)
+                logger.error(f"❌ Erro de DNS/conectividade ao acessar Supabase. Verifique a conectividade de rede e a URL: {self.url}")
+                logger.error(f"Detalhes do erro: {error_repr}")
             else:
-                logger.error(f"Erro ao fazer upload no Supabase: {e}", exc_info=True)
+                logger.error(f"❌ Erro ao fazer upload de arquivo no Supabase: {error_repr}")
+                logger.error(f"Tipo do erro: {type(e).__name__}")
             return None
     
     def delete_all_images_in_folder(self, folder: str = "produtos") -> bool:

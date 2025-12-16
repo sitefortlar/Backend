@@ -21,11 +21,26 @@ SUPABASE_BUCKET=products
 
 ## Como Obter as Credenciais
 
+### Para Upload no Storage (Recomendado - Nova API)
+
 1. Acesse o painel do Supabase: https://app.supabase.com
 2. Selecione seu projeto
-3. Vá em **Settings** > **API**
-4. Copie a **URL** do projeto (SUPABASE_URL)
-5. Copie a **Service Role Key** (SUPABASE_KEY) - **IMPORTANTE**: Use a Service Role Key, não a Anon Key, para ter permissões completas no Storage
+3. Vá em **Settings** > **API Keys**
+4. Na seção **"Secret keys"**, clique em **"+ New secret key"**
+5. Dê um nome descritivo (ex: `backend_storage` ou `api_upload`)
+6. **IMPORTANTE**: Copie a chave imediatamente, pois ela só será mostrada uma vez
+7. Use esta **Secret Key** como `SUPABASE_KEY` no arquivo `.env`
+
+**Formato da chave**: Deve começar com `sb_secret_` seguido de caracteres alfanuméricos
+
+### Alternativa: Legacy Service Role Key
+
+Se você ainda estiver usando o sistema antigo:
+1. Vá em **Settings** > **API**
+2. Copie a **Service Role Key** (não a Anon Key)
+3. Esta chave geralmente começa com `eyJ...` (formato JWT)
+
+**Nota**: O Supabase está migrando para o novo sistema de API Keys. Use as **Secret Keys** do novo sistema quando possível.
 
 ## Configuração do Bucket
 
