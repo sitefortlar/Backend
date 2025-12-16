@@ -55,6 +55,6 @@ MAIL_PORT=587
 MAIL_SERVER="smtp.gmail.com"
 
 
-SUPABASE_URL='https://mougzelntqaynavihtql.supabase.co'
+SUPABASE_URL='https://zpcnvcthecltyiopstxd.supabase.co'
 SUPABASE_KEY='sb_secret_NL6zzk5OODPbigHLMyA67A_KfXPplrM'
 SUPABASE_BUCKET='products'

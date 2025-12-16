@@ -25,11 +25,26 @@ class SupabaseService:
                 "SUPABASE_URL e SUPABASE_KEY devem estar configurados no arquivo .env"
             )
         
+        # Valida e loga a configuração
+        logger.info(f"Inicializando cliente Supabase...")
+        logger.info(f"URL: {self.url}")
+        logger.info(f"Bucket: {self.bucket}")
+        logger.debug(f"Key (primeiros 20 chars): {self.key[:20]}...")
+        
+        # Valida formato da URL
+        if not self.url.startswith('https://') or '.supabase.co' not in self.url:
+            raise ValueError(
+                f"URL do Supabase inválida: {self.url}. "
+                f"Deve ser no formato: https://[project-id].supabase.co"
+            )
+        
         try:
             self.client: Client = create_client(self.url, self.key)
-            logger.info(f"Cliente Supabase inicializado. Bucket: {self.bucket}")
+            logger.info(f"✅ Cliente Supabase inicializado com sucesso. Bucket: {self.bucket}")
         except Exception as e:
-            logger.error(f"Erro ao inicializar cliente Supabase: {e}")
+            logger.error(f"❌ Erro ao inicializar cliente Supabase: {e}")
+            logger.error(f"URL usada: {self.url}")
+            logger.error(f"Verifique se a URL e a chave estão corretas")
             raise
     
     def upload_image(self, file_name: str, file_bytes: bytes, content_type: str = "image/jpeg") -> Optional[str]:
@@ -53,6 +68,13 @@ class SupabaseService:
                 path = file_name
             
             logger.info(f"Fazendo upload de {path} para Supabase Storage (bucket: {self.bucket})")
+            logger.info(f"URL do Supabase: {self.url}")
+            logger.info(f"Tamanho da imagem: {len(file_bytes)} bytes")
+            
+            # Verifica se o cliente está inicializado
+            if not hasattr(self, 'client') or self.client is None:
+                logger.error("Cliente Supabase não está inicializado!")
+                return None
             
             # Prepara opções conforme documentação oficial do Supabase
             # Formato: upload(file_path, file, options)
@@ -80,7 +102,13 @@ class SupabaseService:
             return public_url
             
         except Exception as e:
-            logger.error(f"Erro ao fazer upload no Supabase: {e}", exc_info=True)
+            error_msg = str(e)
+            # Detecta erros de DNS/conectividade
+            if "Name or service not known" in error_msg or "Failed to resolve" in error_msg or "gaierror" in error_msg.lower():
+                logger.error(f"Erro de DNS/conectividade ao acessar Supabase. Verifique a conectividade de rede e a URL: {self.url}")
+                logger.error(f"Detalhes do erro: {e}", exc_info=True)
+            else:
+                logger.error(f"Erro ao fazer upload no Supabase: {e}", exc_info=True)
             return None
     
     def upload_file(self, file_name: str, file_bytes: bytes, content_type: str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") -> Optional[str]:
@@ -104,6 +132,7 @@ class SupabaseService:
                 path = file_name
             
             logger.info(f"Fazendo upload de {path} para Supabase Storage (bucket: {self.bucket})")
+            logger.debug(f"URL do Supabase: {self.url}, Tamanho do arquivo: {len(file_bytes)} bytes")
             
             # Prepara opções conforme documentação oficial do Supabase
             options = {
@@ -127,7 +156,13 @@ class SupabaseService:
             return public_url
             
         except Exception as e:
-            logger.error(f"Erro ao fazer upload no Supabase: {e}", exc_info=True)
+            error_msg = str(e)
+            # Detecta erros de DNS/conectividade
+            if "Name or service not known" in error_msg or "Failed to resolve" in error_msg or "gaierror" in error_msg.lower():
+                logger.error(f"Erro de DNS/conectividade ao acessar Supabase. Verifique a conectividade de rede e a URL: {self.url}")
+                logger.error(f"Detalhes do erro: {e}", exc_info=True)
+            else:
+                logger.error(f"Erro ao fazer upload no Supabase: {e}", exc_info=True)
             return None
     
     def delete_all_images_in_folder(self, folder: str = "produtos") -> bool:

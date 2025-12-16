@@ -118,6 +118,7 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
 
             # Inicia transação
             try:
+                logger.info(f"Iniciando processamento de {len(produtos_data)} produto(s)")
                 if detected_format == 'csv':
                     self._process_csv_format(
                         produtos_data, session, summary,
@@ -128,7 +129,9 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         produtos_data, session, summary,
                         seen_categorias, seen_subcategorias
                     )
-
+                
+                logger.info(f"Processamento concluído. Resumo: {summary}")
+                
             except Exception as e:
                 session.rollback()
                 logger.exception("Erro no processamento, rollback realizado")
@@ -330,7 +333,17 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
             return
         
         try:
-            logger.info(f"Processando {len(image_urls)} URL(s) de imagem para o produto {produto.codigo}")
+            logger.info(f"🖼️  Processando {len(image_urls)} URL(s) de imagem para o produto {produto.codigo} (ID: {produto.id_produto})")
+            
+            # Verifica se o SupabaseService está inicializado
+            if not hasattr(self, 'supabase_service') or self.supabase_service is None:
+                logger.error(f"❌ SupabaseService não está inicializado para produto {produto.codigo}")
+                summary["errors"].append({
+                    "type": "imagem",
+                    "product_codigo": produto.codigo,
+                    "error": "SupabaseService não está inicializado"
+                })
+                return
             
             # Busca imagens existentes do produto usando o repository
             existing_images = self.product_image_repository.get_by_produto(produto.id_produto, session)
@@ -403,8 +416,12 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         else:
                             file_name = f"{produto.codigo}_{idx}.jpg"
                         
-                        # Faz upload para o Supabase
-                        logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo upload para Supabase")
+                    # Faz upload para o Supabase
+                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: Fazendo upload para Supabase")
+                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: Tamanho do arquivo: {len(image_bytes)} bytes")
+                    logger.info(f"Produto {produto.codigo}, Imagem {idx}: Nome do arquivo: {file_name}")
+                    
+                    try:
                         supabase_url = self.supabase_service.upload_image(
                             file_name=file_name,
                             file_bytes=image_bytes,
@@ -412,13 +429,23 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         )
                         
                         if not supabase_url:
-                            logger.error(f"Produto {produto.codigo}, Imagem {idx}: Não foi possível fazer upload no Supabase")
+                            logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Upload retornou None - Não foi possível fazer upload no Supabase")
                             summary["errors"].append({
                                 "type": "imagem",
                                 "product_codigo": produto.codigo,
-                                "error": f"Falha no upload para Supabase"
+                                "error": f"Falha no upload para Supabase (retornou None)"
                             })
                             continue
+                        else:
+                            logger.info(f"Produto {produto.codigo}, Imagem {idx}: ✅ Upload concluído com sucesso: {supabase_url[:80]}...")
+                    except Exception as upload_error:
+                        logger.error(f"Produto {produto.codigo}, Imagem {idx}: ❌ Exceção durante upload: {upload_error}", exc_info=True)
+                        summary["errors"].append({
+                            "type": "imagem",
+                            "product_codigo": produto.codigo,
+                            "error": f"Exceção no upload: {str(upload_error)}"
+                        })
+                        continue
                     
                     # Verifica se já existe esta URL do Supabase no banco
                     existing_image = self.product_image_repository.get_by_url(supabase_url, session)
