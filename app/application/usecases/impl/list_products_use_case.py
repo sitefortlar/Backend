@@ -3,6 +3,7 @@
 from typing import List, Dict, Any, Optional
 from fastapi import HTTPException, status
 from decimal import Decimal
+from collections import defaultdict
 
 from app.application.usecases.use_case import UseCase
 from app.domain.models.product_model import Product
@@ -36,7 +37,8 @@ class ListProductsUseCase(UseCase[Dict[str, Any], List[Dict[str, Any]]]):
             categoria_id = request.get('id_category') or request.get('categoria_id')
             subcategoria_id = request.get('id_subcategory') or request.get('subcategoria_id')
             order_price = request.get('order_price')  # 'ASC' ou 'DESC'
-            include_kits = bool(request.get('include_kits', False))
+            # Por padrão, manter compatibilidade: incluir kits
+            include_kits = bool(request.get('include_kits', True))
             search_name = request.get('search_name')
             min_price = request.get('min_price')
             max_price = request.get('max_price')
@@ -97,8 +99,16 @@ class ListProductsUseCase(UseCase[Dict[str, Any], List[Dict[str, Any]]]):
                     exclude_kits=True
                 )
 
-            # Converte para DTOs de resposta (kits opcionais para performance)
-            return [self._build_product_response(product, region, session, include_kits=include_kits) for product in products]
+            # Otimização: se include_kits, buscar todos os itens de kit em UMA query e agrupar por cod_kit
+            kit_map = None
+            if include_kits and session:
+                kit_map = self._build_kit_map(products, session)
+
+            # Converte para DTOs de resposta
+            return [
+                self._build_product_response(product, region, session, include_kits=include_kits, kit_map=kit_map)
+                for product in products
+            ]
 
         except HTTPException:
             raise
@@ -108,7 +118,7 @@ class ListProductsUseCase(UseCase[Dict[str, Any], List[Dict[str, Any]]]):
                 detail=f"Erro ao listar produtos: {str(e)}"
             )
 
-    def _build_product_response(self, product: Product, region, session=None, include_kits: bool = False) -> Dict[str, Any]:
+    def _build_product_response(self, product: Product, region, session=None, include_kits: bool = True, kit_map: Optional[Dict[str, List[Product]]] = None) -> Dict[str, Any]:
         """Constrói a resposta do product com preços calculados e kits relacionados"""
         # Converte cod_kit para string ou None (pode vir como int do banco)
         cod_kit_str = None
@@ -138,7 +148,10 @@ class ListProductsUseCase(UseCase[Dict[str, Any], List[Dict[str, Any]]]):
             # Garante que codigo seja string (pode vir como int do banco)
             codigo_str = str(product.codigo) if product.codigo is not None else None
             if codigo_str:
-                kit_products = self.product_repository.get_by_cod_kit(codigo_str, exclude_product_id=product.id_produto, session=session)
+                if kit_map is not None:
+                    kit_products = kit_map.get(codigo_str, [])
+                else:
+                    kit_products = self.product_repository.get_by_cod_kit(codigo_str, exclude_product_id=product.id_produto, session=session)
                 kits = [self._build_kit_product_response(kit_product, region) for kit_product in kit_products]
         
         return {
@@ -162,6 +175,39 @@ class ListProductsUseCase(UseCase[Dict[str, Any], List[Dict[str, Any]]]):
             '60_dias': round(dias_60, 2),
             'kits': kits
         }
+
+    def _build_kit_map(self, products: List[Product], session) -> Dict[str, List[Product]]:
+        """
+        Monta um dicionário {cod_kit -> [produtos do kit]} em uma única query.
+        Evita N+1 quando include_kits=True.
+        """
+        from sqlalchemy.orm import selectinload
+
+        base_codigos: List[str] = []
+        for p in products:
+            if p.cod_kit is None and p.codigo is not None:
+                base_codigos.append(str(p.codigo))
+
+        if not base_codigos:
+            return {}
+
+        kit_items = (
+            session.query(Product)
+            .options(
+                selectinload(Product.categoria),
+                selectinload(Product.subcategoria),
+                selectinload(Product.imagens),
+            )
+            .filter(Product.cod_kit.in_(base_codigos))
+            .all()
+        )
+
+        kit_map: Dict[str, List[Product]] = defaultdict(list)
+        for item in kit_items:
+            if item.cod_kit is not None:
+                kit_map[str(item.cod_kit)].append(item)
+
+        return dict(kit_map)
     
     def _build_kit_product_response(self, product: Product, region) -> Dict[str, Any]:
         """Constrói a resposta de um produto do kit (sem kits aninhados)"""
