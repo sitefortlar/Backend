@@ -138,8 +138,14 @@ class ProductRepositoryImpl(IProductRepository):
     ) -> List[Product]:
         """Busca produtos com filtros e ordenação. Se limit=None, retorna todos os registros"""
         from sqlalchemy import asc, desc, exists
+        from sqlalchemy.orm import selectinload
         
-        query = session.query(Product)
+        # Eager loading para evitar N+1 (categoria/subcategoria/imagens)
+        query = session.query(Product).options(
+            selectinload(Product.categoria),
+            selectinload(Product.subcategoria),
+            selectinload(Product.imagens),
+        )
         
         # Aplica filtros
         if active_only:

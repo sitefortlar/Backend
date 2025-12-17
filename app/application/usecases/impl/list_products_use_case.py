@@ -36,6 +36,7 @@ class ListProductsUseCase(UseCase[Dict[str, Any], List[Dict[str, Any]]]):
             categoria_id = request.get('id_category') or request.get('categoria_id')
             subcategoria_id = request.get('id_subcategory') or request.get('subcategoria_id')
             order_price = request.get('order_price')  # 'ASC' ou 'DESC'
+            include_kits = bool(request.get('include_kits', False))
             search_name = request.get('search_name')
             min_price = request.get('min_price')
             max_price = request.get('max_price')
@@ -96,8 +97,8 @@ class ListProductsUseCase(UseCase[Dict[str, Any], List[Dict[str, Any]]]):
                     exclude_kits=True
                 )
 
-            # Converte para DTOs de resposta incluindo kits relacionados
-            return [self._build_product_response(product, region, session) for product in products]
+            # Converte para DTOs de resposta (kits opcionais para performance)
+            return [self._build_product_response(product, region, session, include_kits=include_kits) for product in products]
 
         except HTTPException:
             raise
@@ -107,7 +108,7 @@ class ListProductsUseCase(UseCase[Dict[str, Any], List[Dict[str, Any]]]):
                 detail=f"Erro ao listar produtos: {str(e)}"
             )
 
-    def _build_product_response(self, product: Product, region, session=None) -> Dict[str, Any]:
+    def _build_product_response(self, product: Product, region, session=None, include_kits: bool = False) -> Dict[str, Any]:
         """Constrói a resposta do product com preços calculados e kits relacionados"""
         # Converte cod_kit para string ou None (pode vir como int do banco)
         cod_kit_str = None
@@ -131,7 +132,7 @@ class ListProductsUseCase(UseCase[Dict[str, Any], List[Dict[str, Any]]]):
         # Em seguida, buscar produtos cujo cod_kit seja igual a esse código
         # Esses produtos serão os itens pertencentes ao kit
         kits = []
-        if product.codigo and session and product.cod_kit is None:
+        if include_kits and product.codigo and session and product.cod_kit is None:
             # Só busca kits se o produto for base (cod_kit == null)
             # Busca produtos onde cod_kit == product.codigo
             # Garante que codigo seja string (pode vir como int do banco)

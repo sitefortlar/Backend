@@ -57,6 +57,7 @@ async def list_products(
     id_subcategory: Optional[int] = Query(None, description="Filtrar por ID da subcategoria"),
     order_price: Optional[str] = Query(None, description="Ordenar por preço: 'ASC' ou 'DESC'"),
     active_only: bool = Query(True, description="Filtrar apenas produtos ativos"),
+    include_kits: bool = Query(False, description="Incluir itens de kits (mais lento)"),
     skip: int = Query(0, ge=0, description="Número de registros para pular"),
     limit: Optional[int] = Query(None, ge=1, le=10000, description="Número máximo de registros (sem limite se não informado)"),
     session: Session = Depends(get_session),
@@ -104,6 +105,7 @@ async def list_products(
             'id_subcategory': id_subcategory,
             'order_price': order_price.upper() if order_price else None,
             'active_only': active_only,
+            'include_kits': include_kits,
             'skip': skip,
             'limit': limit
         }
