@@ -73,3 +73,8 @@ class IProductRepository(ABC):
     def get_by_cod_kit(self, cod_kit: str, exclude_product_id: Optional[int] = None, session: Session = None) -> List[Product]:
         """Busca produtos por cod_kit, opcionalmente excluindo um produto específico"""
         pass
+
+    @abstractmethod
+    def get_by_ids(self, product_ids: List[int], session: Session) -> List[Product]:
+        """Busca produtos por lista de IDs (em lote)"""
+        pass

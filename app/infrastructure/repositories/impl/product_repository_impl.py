@@ -222,3 +222,17 @@ class ProductRepositoryImpl(IProductRepository):
             query = query.filter(Product.id_produto != exclude_product_id)
         
         return query.all()
+
+    def get_by_ids(self, product_ids: List[int], session: Session) -> List[Product]:
+        """Busca produtos por lista de IDs (em lote) com apenas os campos necessários para preço."""
+        from sqlalchemy.orm import load_only
+
+        if not product_ids:
+            return []
+
+        return (
+            session.query(Product)
+            .options(load_only(Product.id_produto, Product.codigo, Product.nome, Product.valor_base, Product.ativo))
+            .filter(Product.id_produto.in_(product_ids))
+            .all()
+        )

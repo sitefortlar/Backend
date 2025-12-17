@@ -9,6 +9,7 @@ from typing import Any, List, Optional
 from loguru import logger
 
 from app.application.usecases.impl.list_products_use_case import ListProductsUseCase
+from app.application.usecases.impl.get_cart_prices_use_case import GetCartPricesUseCase
 from app.infrastructure.configs.database_config import Session as DBSession
 
 # Use Cases
@@ -30,6 +31,7 @@ from app.presentation.routers.request.excel_request import (
     BulkCreateResponse
 )
 from app.presentation.routers.response.product_response import ProductResponse
+from app.presentation.routers.response.cart_prices_response import CartPricesResponse
 
 produto_router = APIRouter(
     prefix="/product",
@@ -40,6 +42,64 @@ produto_router = APIRouter(
         500: {"description": "Erro interno do servidor"}
     }
 )
+
+def _parse_ids_param(ids: List[str]) -> List[int]:
+    """
+    Aceita ids no formato:
+    - ids=1&ids=2&ids=3
+    - ids=1,2,3
+    - mistura dos dois
+    """
+    result: List[int] = []
+    for raw in ids:
+        if raw is None:
+            continue
+        part = str(raw).strip()
+        if not part:
+            continue
+        for token in part.split(","):
+            t = token.strip()
+            if not t:
+                continue
+            result.append(int(t))
+    return result
+
+
+@produto_router.get(
+    "/cart/prices",
+    summary="Preços do carrinho por estado e prazo",
+    description="Recebe ids de produtos, estado e prazo (0/30/60) e retorna o preço de cada item com desconto da região.",
+    response_model=CartPricesResponse
+)
+async def get_cart_prices(
+    estado: str = Query(..., description="Estado do usuário (ex: SP, RJ, MG, ES)"),
+    prazo: int = Query(..., description="Prazo: 0 (à vista), 30, 60"),
+    ids: List[str] = Query(..., description="IDs dos produtos (ex: ids=1&ids=2 ou ids=1,2,3)"),
+    session: Session = Depends(get_session),
+    current_user = Depends(verify_user_permission(role=RoleEnum.CLIENTE))
+) -> Any:
+    try:
+        product_ids = _parse_ids_param(ids)
+        if not product_ids:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Informe pelo menos um id de produto")
+
+        # Limite de segurança para evitar URL gigante / abuso
+        if len(product_ids) > 1000:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Máximo de 1000 ids por requisição")
+
+        use_case = GetCartPricesUseCase()
+        result = use_case.execute(
+            {"estado": estado, "prazo": prazo, "product_ids": product_ids},
+            session
+        )
+        return result
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="IDs inválidos (use apenas números)")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao calcular preços do carrinho: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao calcular preços do carrinho: {str(e)}")
 
 
 # Dependency Injection Functions removidas - usando padrão simples
