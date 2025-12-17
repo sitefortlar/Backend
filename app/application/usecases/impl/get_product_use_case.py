@@ -143,12 +143,19 @@ class GetProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
         # 60_dias = valor_base * desconto_60
         dias_60 = float(valor_base * region.desconto_60)
         
+        # Calcula os valores totais (preço * quantidade)
+        quantidade = product.quantidade
+        valor_base_total = float(valor_base) * quantidade
+        valor_total_avista = avista * quantidade
+        valor_total_30 = dias_30 * quantidade
+        valor_total_60 = dias_60 * quantidade
+        
         return {
             'id_produto': product.id_produto,
             'codigo': product.codigo,
             'nome': product.nome,
             'descricao': product.descricao,
-            'quantidade': product.quantidade,
+            'quantidade': quantidade,
             'cod_kit': cod_kit_str,
             'id_categoria': product.id_categoria,
             'id_subcategoria': product.id_subcategoria,
@@ -162,6 +169,10 @@ class GetProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
             'avista': round(avista, 2),
             '30_dias': round(dias_30, 2),
             '60_dias': round(dias_60, 2),
+            'valor_base_total': round(valor_base_total, 2),
+            'valor_total_avista': round(valor_total_avista, 2),
+            'valor_total_30': round(valor_total_30, 2),
+            'valor_total_60': round(valor_total_60, 2),
             'kits': []  # Produtos dentro de kits não têm kits aninhados
         }
 

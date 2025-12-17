@@ -25,6 +25,10 @@ class ProductResponse(BaseModel):
     avista: Optional[float] = None
     dias_30: Optional[float] = Field(None, alias="30_dias")
     dias_60: Optional[float] = Field(None, alias="60_dias")
+    valor_base_total: Optional[float] = None
+    valor_total_avista: Optional[float] = None
+    valor_total_30: Optional[float] = None
+    valor_total_60: Optional[float] = None
     kits: List['ProductResponse'] = []
     
     class Config:
