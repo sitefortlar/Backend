@@ -30,6 +30,7 @@ from app.presentation.routers.address_router import address_router
 from app.presentation.routers.email_token_router import email_token_router
 from app.presentation.routers.region_router import region_router
 from app.presentation.routers.upload_router import upload_router
+from app.presentation.routers.coupon_router import coupon_router
 
 
 
@@ -119,6 +120,7 @@ application.include_router(email_token_router, prefix="/api", tags=["Token"])
 application.include_router(region_router, prefix="/api", tags=["Regiões"])
 application.include_router(utils_router, prefix="/api", tags=["Utilitários"])
 application.include_router(upload_router, prefix="/api", tags=["Upload"])
+application.include_router(coupon_router, prefix="/api", tags=["Cupons"])
 
 # ==== Exception handlers ====
 @application.exception_handler(ExistingRecordException)
