@@ -245,11 +245,12 @@ class ProductRepositoryImpl(IProductRepository):
         # Otimização: Filtragem de kits no SQL ao invés de Python
         if exclude_kits:
             # Filtra: produtos sem cod_kit OU produtos com cod_kit mas sem produto pai
-            from sqlalchemy import exists, or_, not_, alias
+            from sqlalchemy import exists, or_, not_, alias, cast, String
             # Subquery verifica se existe produto com codigo igual ao cod_kit do produto atual
+            # Cast cod_kit para String para garantir compatibilidade de tipos (codigo é varchar, cod_kit pode ser integer no DB)
             ProductParent = alias(Product.__table__)
             parent_exists = exists().select_from(ProductParent).where(
-                ProductParent.c.codigo == Product.cod_kit
+                ProductParent.c.codigo == cast(Product.__table__.c.cod_kit, String)
             )
             query = query.filter(
                 or_(
