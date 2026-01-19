@@ -60,13 +60,15 @@ class ListProductsUseCase(UseCase[Dict[str, Any], List[Dict[str, Any]]]):
             # 🧩 NOVA LÓGICA: Buscar produtos base (sem kit) - onde cod_kit == null
             # Esses produtos representam os kits principais
             if search_name:
-                products = self.product_repository.search_by_name(search_name, session, exclude_kits=True)
+                products = self.product_repository.search_by_name(search_name, session, exclude_kits=True, skip=skip, limit=limit)
             elif min_price is not None and max_price is not None:
                 # Para busca por faixa de preço, também precisa excluir kits
                 all_products = self.product_repository.get_by_price_range(
                     Decimal(str(min_price)), 
                     Decimal(str(max_price)), 
-                    session
+                    session,
+                    skip=skip,
+                    limit=limit
                 )
                 # Filtra produtos: mantém os que não têm cod_kit OU os que têm cod_kit mas não têm produto pai
                 products = []

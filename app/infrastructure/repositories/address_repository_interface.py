@@ -31,17 +31,29 @@ class IAddressRepository(ABC):
         pass
 
     @abstractmethod
-    def get_by_company(self, company_id: int, session: Session) -> List[Address]:
+    def get_by_company(self, company_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
         pass
 
     @abstractmethod
-    def get_by_cep(self, cep: str, session: Session) -> List[Address]:
+    def get_by_cep(self, cep: str, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
         pass
 
     @abstractmethod
-    def get_by_city(self, city: str, session: Session) -> List[Address]:
+    def get_by_city(self, city: str, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
         pass
 
     @abstractmethod
-    def get_by_state(self, state: str, session: Session) -> List[Address]:
+    def get_by_state(self, state: str, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
+        pass
+
+    @abstractmethod
+    def get_primary_address(self, company_id: int, session: Session) -> Optional[Address]:
+        pass
+
+    @abstractmethod
+    def search_by_address(self, address_parts: str, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
+        pass
+
+    @abstractmethod
+    def get_by_ibge(self, ibge: str, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
         pass

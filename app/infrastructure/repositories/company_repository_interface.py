@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, List
 
 from app.domain.models.company_model import Company
 from app.infrastructure.configs.database_config import Session
@@ -43,4 +43,32 @@ class ICompanyRepository(ABC):
 
     @abstractmethod
     def update_company_ativo_status(self, company_id: int, ativo: bool, session: Session) -> None:
+        pass
+
+    @abstractmethod
+    def get_by_cnpj(self, cnpj: str, session: Session) -> Optional[Company]:
+        pass
+
+    @abstractmethod
+    def get_by_email(self, email: str, session: Session) -> Optional[Company]:
+        pass
+
+    @abstractmethod
+    def get_active_companies(self, session: Session, skip: int = 0, limit: int = 100) -> List[Company]:
+        pass
+
+    @abstractmethod
+    def get_by_vendedor(self, vendedor_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Company]:
+        pass
+
+    @abstractmethod
+    def search_by_name(self, name: str, session: Session, skip: int = 0, limit: int = 100) -> List[Company]:
+        pass
+
+    @abstractmethod
+    def update_status(self, company_id: int, ativo: bool, session: Session) -> bool:
+        pass
+
+    @abstractmethod
+    def get_with_relations(self, company_id: int, session: Session) -> Optional[Company]:
         pass

@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Optional, List
+from decimal import Decimal
 
 from app.domain.models.product_model import Product
 from app.infrastructure.configs.database_config import Session
@@ -35,23 +36,23 @@ class IProductRepository(ABC):
         pass
 
     @abstractmethod
-    def get_by_categoria(self, categoria_id: int, session: Session) -> List[Product]:
+    def get_by_categoria(self, categoria_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         pass
 
     @abstractmethod
-    def get_by_subcategoria(self, subcategoria_id: int, session: Session) -> List[Product]:
+    def get_by_subcategoria(self, subcategoria_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         pass
 
     @abstractmethod
-    def get_active_products(self, session: Session) -> List[Product]:
+    def get_active_products(self, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         pass
 
     @abstractmethod
-    def search_by_name(self, name: str, session: Session, exclude_kits: bool = False) -> List[Product]:
+    def search_by_name(self, name: str, session: Session, exclude_kits: bool = False, skip: int = 0, limit: int = 100) -> List[Product]:
         pass
 
     @abstractmethod
-    def get_by_price_range(self, min_price: float, max_price: float, session: Session) -> List[Product]:
+    def get_by_price_range(self, min_price: Decimal, max_price: Decimal, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         pass
 
     @abstractmethod
@@ -70,7 +71,7 @@ class IProductRepository(ABC):
         pass
 
     @abstractmethod
-    def get_by_cod_kit(self, cod_kit: str, exclude_product_id: Optional[int] = None, session: Session = None) -> List[Product]:
+    def get_by_cod_kit(self, cod_kit: str, exclude_product_id: Optional[int] = None, session: Session = None, skip: int = 0, limit: int = 100) -> List[Product]:
         """Busca produtos por cod_kit, opcionalmente excluindo um produto específico"""
         pass
 

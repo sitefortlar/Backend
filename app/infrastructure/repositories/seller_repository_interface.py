@@ -39,11 +39,11 @@ class ISellerRepository(ABC):
         pass
 
     @abstractmethod
-    def search_by_name(self, name: str, session: Session) -> List[Seller]:
+    def search_by_name(self, name: str, session: Session, skip: int = 0, limit: int = 100) -> List[Seller]:
         """Busca vendedores por nome"""
         pass
 
     @abstractmethod
-    def get_active_sellers(self, session: Session) -> List[Seller]:
+    def get_active_sellers(self, session: Session, skip: int = 0, limit: int = 100) -> List[Seller]:
         """Busca vendedores ativos"""
         pass

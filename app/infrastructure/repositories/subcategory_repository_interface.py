@@ -35,11 +35,11 @@ class ISubcategoryRepository(ABC):
         pass
 
     @abstractmethod
-    def get_by_categoria(self, categoria_id: int, session: Session) -> List[Subcategory]:
+    def get_by_categoria(self, categoria_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Subcategory]:
         pass
 
     @abstractmethod
-    def search_by_name(self, name: str, session: Session) -> List[Subcategory]:
+    def search_by_name(self, name: str, session: Session, skip: int = 0, limit: int = 100) -> List[Subcategory]:
         pass
 
     @abstractmethod

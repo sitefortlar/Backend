@@ -35,9 +35,21 @@ class IContactRepository(ABC):
         pass
 
     @abstractmethod
-    def get_by_company(self, company_id: int, session: Session) -> List[Contact]:
+    def get_by_company(self, company_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Contact]:
         pass
 
     @abstractmethod
     def exists_by_email(self, email: str, session: Session) -> bool:
+        pass
+
+    @abstractmethod
+    def get_primary_contact(self, company_id: int, session: Session) -> Optional[Contact]:
+        pass
+
+    @abstractmethod
+    def search_by_name(self, name: str, session: Session, skip: int = 0, limit: int = 100) -> List[Contact]:
+        pass
+
+    @abstractmethod
+    def get_by_phone(self, phone: str, session: Session, skip: int = 0, limit: int = 100) -> List[Contact]:
         pass

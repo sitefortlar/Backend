@@ -28,9 +28,9 @@ class ListCompaniesUseCase(UseCase[dict, List[CompanyResponse]]):
             if active_only:
                 companies = self.company_repository.get_active_companies(session, skip, limit)
             elif vendedor_id:
-                companies = self.company_repository.get_by_vendedor(vendedor_id, session)
+                companies = self.company_repository.get_by_vendedor(vendedor_id, session, skip, limit)
             elif search_name:
-                companies = self.company_repository.search_by_name(search_name, session)
+                companies = self.company_repository.search_by_name(search_name, session, skip, limit)
             else:
                 companies = self.company_repository.get_all(session, skip, limit)
 

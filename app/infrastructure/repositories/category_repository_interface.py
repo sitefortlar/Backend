@@ -35,9 +35,17 @@ class ICategoryRepository(ABC):
         pass
 
     @abstractmethod
-    def search_by_name(self, name: str, session: Session) -> List[Category]:
+    def search_by_name(self, name: str, session: Session, skip: int = 0, limit: int = 100) -> List[Category]:
         pass
 
     @abstractmethod
     def exists_by_name(self, name: str, session: Session) -> bool:
+        pass
+
+    @abstractmethod
+    def get_categories_with_products(self, session: Session, skip: int = 0, limit: int = 100) -> List[Category]:
+        pass
+
+    @abstractmethod
+    def get_categories_with_subcategories(self, session: Session, skip: int = 0, limit: int = 100) -> List[Category]:
         pass
