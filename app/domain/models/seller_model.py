@@ -2,11 +2,11 @@ from sqlalchemy import Integer, String, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List
 
-from app.infrastructure.configs.base_mixin import BaseMixin, Base, TimestampMixin
+from app.infrastructure.configs.base_mixin import BaseMixin, Base
 
 
 
-class Seller(Base, TimestampMixin, BaseMixin):
+class Seller(Base, BaseMixin):
     """Modelo de domínio para Vendedor"""
     __tablename__ = 'vendedor'
 
