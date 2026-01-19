@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, Text, Boolean, Numeric, ForeignKey
+from sqlalchemy import Integer, String, Text, Boolean, Numeric, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import Optional, List
 from decimal import Decimal
@@ -22,6 +22,15 @@ class Product(Base, TimestampMixin, BaseMixin):
     id_subcategoria: Mapped[int] = mapped_column(Integer, ForeignKey('subcategoria.id_subcategoria'), nullable=True)
     valor_base: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        Index('idx_produto_nome', 'nome'),
+        Index('idx_produto_cod_kit', 'cod_kit'),
+        Index('idx_produto_ativo_categoria', 'ativo', 'id_categoria'),
+        Index('idx_produto_valor_base', 'valor_base'),
+        Index('idx_produto_categoria', 'id_categoria'),
+        Index('idx_produto_subcategoria', 'id_subcategoria'),
+    )
 
     # Relacionamentos
     categoria: Mapped[Optional['Category']] = relationship('Category', back_populates='produtos')

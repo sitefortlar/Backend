@@ -44,13 +44,18 @@ class ContactRepositoryImpl(IContactRepository):
         """Busca contato por email"""
         return session.query(Contact).filter(Contact.email == email).first()
 
-    def get_by_company(self, company_id: int, session: Session) -> List[Contact]:
+    def get_by_company(self, company_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Contact]:
         """Busca contatos por empresa"""
-        return session.query(Contact).filter(Contact.id_empresa == company_id).all()
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        return session.query(Contact).filter(Contact.id_empresa == company_id).offset(skip).limit(limit).all()
 
     def exists_by_email(self, email: str, session: Session) -> bool:
         """Verifica se contato existe por email"""
-        return session.query(Contact).filter(Contact.email == email).first() is not None
+        from sqlalchemy import exists
+        return session.query(exists().where(Contact.email == email)).scalar()
 
     def get_primary_contact(self, company_id: int, session: Session) -> Optional[Contact]:
         """Busca contato principal da empresa (primeiro contato)"""
@@ -58,14 +63,33 @@ class ContactRepositoryImpl(IContactRepository):
             Contact.id_empresa == company_id
         ).first()
 
-    def search_by_name(self, name: str, session: Session) -> List[Contact]:
+    def search_by_name(self, name: str, session: Session, skip: int = 0, limit: int = 100) -> List[Contact]:
         """Busca contatos por nome"""
+        # Validação de entrada
+        if not name or not name.strip():
+            return []
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
         return session.query(Contact).filter(
-            Contact.nome.ilike(f"%{name}%")
-        ).all()
+            Contact.nome.ilike(f"%{name.strip()}%")
+        ).offset(skip).limit(limit).all()
 
-    def get_by_phone(self, phone: str, session: Session) -> List[Contact]:
+    def get_by_phone(self, phone: str, session: Session, skip: int = 0, limit: int = 100) -> List[Contact]:
         """Busca contatos por telefone ou celular"""
+        from sqlalchemy import or_
+        
+        # Validação de entrada
+        if not phone or not phone.strip():
+            return []
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        phone_clean = phone.strip()
         return session.query(Contact).filter(
-            (Contact.telefone == phone) | (Contact.celular == phone)
-        ).all()
+            or_(Contact.telefone == phone_clean, Contact.celular == phone_clean)
+        ).offset(skip).limit(limit).all()

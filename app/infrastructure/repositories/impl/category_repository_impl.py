@@ -44,22 +44,39 @@ class CategoryRepositoryImpl(ICategoryRepository):
         """Busca category por nome exato"""
         return session.query(Category).filter(Category.nome == name).first()
 
-    def search_by_name(self, name: str, session: Session) -> List[Category]:
+    def search_by_name(self, name: str, session: Session, skip: int = 0, limit: int = 100) -> List[Category]:
         """Busca categorys por nome (busca parcial)"""
+        # Validação de entrada
+        if not name or not name.strip():
+            return []
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
         return session.query(Category).filter(
-            Category.nome.ilike(f"%{name}%")
-        ).all()
+            Category.nome.ilike(f"%{name.strip()}%")
+        ).offset(skip).limit(limit).all()
 
     def exists_by_name(self, name: str, session: Session) -> bool:
         """Verifica se category existe por nome"""
-        return session.query(Category).filter(Category.nome == name).first() is not None
+        from sqlalchemy import exists
+        return session.query(exists().where(Category.nome == name)).scalar()
 
-    def get_categories_with_products(self, session: Session) -> List[Category]:
+    def get_categories_with_products(self, session: Session, skip: int = 0, limit: int = 100) -> List[Category]:
         """Busca categorys que possuem produtos"""
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
         # Comentado temporariamente devido a relacionamentos desabilitados
-        return session.query(Category).all()
+        return session.query(Category).offset(skip).limit(limit).all()
 
-    def get_categories_with_subcategories(self, session: Session) -> List[Category]:
+    def get_categories_with_subcategories(self, session: Session, skip: int = 0, limit: int = 100) -> List[Category]:
         """Busca categorys que possuem subcategorys"""
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
         # Comentado temporariamente devido a relacionamentos desabilitados
-        return session.query(Category).all()
+        return session.query(Category).offset(skip).limit(limit).all()

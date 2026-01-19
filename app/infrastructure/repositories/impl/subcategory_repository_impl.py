@@ -44,18 +44,31 @@ class SubcategoryRepositoryImpl(ISubcategoryRepository):
         """Busca subcategory por nome exato"""
         return session.query(Subcategory).filter(Subcategory.nome == name).first()
 
-    def get_by_categoria(self, categoria_id: int, session: Session) -> List[Subcategory]:
+    def get_by_categoria(self, categoria_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Subcategory]:
         """Busca subcategorys por categoria"""
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
         return session.query(Subcategory).filter(
             Subcategory.id_categoria == categoria_id
-        ).all()
+        ).offset(skip).limit(limit).all()
 
-    def search_by_name(self, name: str, session: Session) -> List[Subcategory]:
+    def search_by_name(self, name: str, session: Session, skip: int = 0, limit: int = 100) -> List[Subcategory]:
         """Busca subcategorys por nome (busca parcial)"""
+        # Validação de entrada
+        if not name or not name.strip():
+            return []
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
         return session.query(Subcategory).filter(
-            Subcategory.nome.ilike(f"%{name}%")
-        ).all()
+            Subcategory.nome.ilike(f"%{name.strip()}%")
+        ).offset(skip).limit(limit).all()
 
     def exists_by_name(self, name: str, session: Session) -> bool:
         """Verifica se subcategory existe por nome"""
-        return session.query(Subcategory).filter(Subcategory.nome == name).first() is not None
+        from sqlalchemy import exists
+        return session.query(exists().where(Subcategory.nome == name)).scalar()

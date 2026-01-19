@@ -45,7 +45,8 @@ class CouponRepositoryImpl(ICouponRepository):
 
     def exists_by_codigo(self, codigo: str, session: Session) -> bool:
         """Verifica se cupom existe por código"""
-        return session.query(Coupon).filter(Coupon.codigo == codigo).first() is not None
+        from sqlalchemy import exists
+        return session.query(exists().where(Coupon.codigo == codigo)).scalar()
 
     def get_active_coupons(self, session: Session, skip: int = 0, limit: int = 100) -> List[Coupon]:
         """Lista cupons ativos"""

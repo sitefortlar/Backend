@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, ForeignKey, Boolean, Enum
+from sqlalchemy import Integer, String, ForeignKey, Boolean, Enum, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List, Optional
 
@@ -28,6 +28,13 @@ class Company(Base, TimestampMixin, BaseMixin):
     )
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     id_vendedor: Mapped[int] = mapped_column(Integer, ForeignKey('vendedor.id_vendedor'), nullable=False)
+
+    __table_args__ = (
+        Index('idx_empresa_razao_social', 'razao_social'),
+        Index('idx_empresa_nome_fantasia', 'nome_fantasia'),
+        Index('idx_empresa_ativo', 'ativo'),
+        Index('idx_empresa_vendedor', 'id_vendedor'),
+    )
 
     # Relacionamentos
     enderecos: Mapped[List['Address']] = relationship(

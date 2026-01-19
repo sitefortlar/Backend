@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, ForeignKey
+from sqlalchemy import Integer, String, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import Optional
 
@@ -18,7 +18,12 @@ class Contact(Base, TimestampMixin, BaseMixin):
     nome: Mapped[str] = mapped_column(String(150), nullable=False)
     telefone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     celular: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    email: Mapped[str] = mapped_column(String(150), nullable=False)
+    email: Mapped[str] = mapped_column(String(150), nullable=False, unique=True, index=True)
+
+    __table_args__ = (
+        Index('idx_contato_nome', 'nome'),
+        Index('idx_contato_empresa', 'id_empresa'),
+    )
 
     # Relacionamento
     empresa: Mapped[Optional['Company']] = relationship('Company', back_populates='contatos')

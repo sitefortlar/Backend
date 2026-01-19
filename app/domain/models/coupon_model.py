@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, Boolean, Date, Numeric, CheckConstraint, Enum
+from sqlalchemy import Integer, String, Boolean, Date, Numeric, CheckConstraint, Enum, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import Optional, List
 from decimal import Decimal
@@ -32,6 +32,8 @@ class Coupon(Base, TimestampMixin, BaseMixin):
 
     __table_args__ = (
         CheckConstraint("tipo IN ('percentual','valor_fixo')", name='chk_cupons_tipo'),
+        Index('idx_cupom_ativo', 'ativo'),
+        Index('idx_cupom_validade', 'validade_inicio', 'validade_fim'),
     )
 
     # Relacionamentos

@@ -40,21 +40,45 @@ class AddressRepositoryImpl(IAddressRepository):
             return True
         return False
 
-    def get_by_company(self, company_id: int, session: Session) -> List[Address]:
+    def get_by_company(self, company_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
         """Busca endereços por empresa"""
-        return session.query(Address).filter(Address.id_empresa == company_id).all()
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        return session.query(Address).filter(Address.id_empresa == company_id).offset(skip).limit(limit).all()
 
-    def get_by_cep(self, cep: str, session: Session) -> List[Address]:
+    def get_by_cep(self, cep: str, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
         """Busca endereços por CEP"""
-        return session.query(Address).filter(Address.cep == cep).all()
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        return session.query(Address).filter(Address.cep == cep).offset(skip).limit(limit).all()
 
-    def get_by_city(self, city: str, session: Session) -> List[Address]:
+    def get_by_city(self, city: str, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
         """Busca endereços por cidade"""
-        return session.query(Address).filter(Address.cidade.ilike(f"%{city}%")).all()
+        # Validação de entrada
+        if not city or not city.strip():
+            return []
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        return session.query(Address).filter(Address.cidade.ilike(f"%{city.strip()}%")).offset(skip).limit(limit).all()
 
-    def get_by_state(self, state: str, session: Session) -> List[Address]:
+    def get_by_state(self, state: str, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
         """Busca endereços por estado (UF)"""
-        return session.query(Address).filter(Address.uf == state.upper()).all()
+        # Validação de entrada
+        if not state or not state.strip():
+            return []
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        return session.query(Address).filter(Address.uf == state.strip().upper()).offset(skip).limit(limit).all()
 
     def get_primary_address(self, company_id: int, session: Session) -> Optional[Address]:
         """Busca endereço principal da empresa (primeiro endereço)"""
@@ -62,14 +86,31 @@ class AddressRepositoryImpl(IAddressRepository):
             Address.id_empresa == company_id
         ).first()
 
-    def search_by_address(self, address_parts: str, session: Session) -> List[Address]:
+    def search_by_address(self, address_parts: str, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
         """Busca endereços por partes do endereço (rua, bairro, etc.)"""
+        from sqlalchemy import or_
+        
+        # Validação de entrada
+        if not address_parts or not address_parts.strip():
+            return []
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        search_term = address_parts.strip()
         return session.query(Address).filter(
-            (Address.bairro.ilike(f"%{address_parts}%")) |
-            (Address.cidade.ilike(f"%{address_parts}%")) |
-            (Address.ibge.ilike(f"%{address_parts}%"))
-        ).all()
+            or_(
+                Address.bairro.ilike(f"%{search_term}%"),
+                Address.cidade.ilike(f"%{search_term}%"),
+                Address.ibge.ilike(f"%{search_term}%")
+            )
+        ).offset(skip).limit(limit).all()
 
-    def get_by_ibge(self, ibge: str, session: Session) -> List[Address]:
+    def get_by_ibge(self, ibge: str, session: Session, skip: int = 0, limit: int = 100) -> List[Address]:
         """Busca endereços por código IBGE"""
-        return session.query(Address).filter(Address.ibge == ibge).all()
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        return session.query(Address).filter(Address.ibge == ibge).offset(skip).limit(limit).all()

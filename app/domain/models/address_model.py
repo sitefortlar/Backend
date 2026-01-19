@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, ForeignKey
+from sqlalchemy import Integer, String, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import Optional
 
@@ -23,6 +23,15 @@ class Address(Base, TimestampMixin, BaseMixin):
     cidade: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     uf: Mapped[str] = mapped_column(String(2), nullable=False)
     ibge: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    __table_args__ = (
+        Index('idx_endereco_cidade', 'cidade'),
+        Index('idx_endereco_bairro', 'bairro'),
+        Index('idx_endereco_cep', 'cep'),
+        Index('idx_endereco_uf', 'uf'),
+        Index('idx_endereco_ibge', 'ibge'),
+        Index('idx_endereco_empresa', 'id_empresa'),
+    )
 
     # Relacionamento
     empresa: Mapped[Optional['Company']] = relationship('Company', back_populates='enderecos')

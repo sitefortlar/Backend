@@ -20,7 +20,12 @@ class ProductRepositoryImpl(IProductRepository):
 
     def get_by_id(self, product_id: int, session: Session) -> Optional[Product]:
         """Busca product por ID"""
-        return session.query(Product).filter(Product.id_produto == product_id).first()
+        from sqlalchemy.orm import selectinload
+        return session.query(Product).options(
+            selectinload(Product.categoria),
+            selectinload(Product.subcategoria),
+            selectinload(Product.imagens)
+        ).filter(Product.id_produto == product_id).first()
 
     def get_all(self, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         """Lista todos os products"""
@@ -47,83 +52,148 @@ class ProductRepositoryImpl(IProductRepository):
         codigo_str = str(codigo) if codigo is not None else None
         return session.query(Product).filter(Product.codigo == codigo_str).first()
 
-    def get_by_categoria(self, categoria_id: int, session: Session) -> List[Product]:
+    def get_by_categoria(self, categoria_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         """Busca products por categoria"""
-        return session.query(Product).filter(Product.id_categoria == categoria_id).all()
+        from sqlalchemy.orm import selectinload
+        return session.query(Product).options(
+            selectinload(Product.categoria),
+            selectinload(Product.subcategoria),
+            selectinload(Product.imagens)
+        ).filter(Product.id_categoria == categoria_id).offset(skip).limit(limit).all()
 
-    def get_by_subcategoria(self, subcategoria_id: int, session: Session) -> List[Product]:
+    def get_by_subcategoria(self, subcategoria_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         """Busca products por subcategoria"""
-        return session.query(Product).filter(Product.id_subcategoria == subcategoria_id).all()
+        from sqlalchemy.orm import selectinload
+        return session.query(Product).options(
+            selectinload(Product.categoria),
+            selectinload(Product.subcategoria),
+            selectinload(Product.imagens)
+        ).filter(Product.id_subcategoria == subcategoria_id).offset(skip).limit(limit).all()
 
-    def get_active_products(self, session: Session) -> List[Product]:
+    def get_active_products(self, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         """Busca products ativos"""
-        return session.query(Product).filter(Product.ativo == True).all()
+        from sqlalchemy.orm import selectinload
+        return session.query(Product).options(
+            selectinload(Product.categoria),
+            selectinload(Product.subcategoria),
+            selectinload(Product.imagens)
+        ).filter(Product.ativo == True).offset(skip).limit(limit).all()
 
-    def search_by_name(self, name: str, session: Session, exclude_kits: bool = False) -> List[Product]:
+    def search_by_name(self, name: str, session: Session, exclude_kits: bool = False, skip: int = 0, limit: int = 100) -> List[Product]:
         """Busca products por nome"""
-        from sqlalchemy import exists
+        from sqlalchemy import exists, or_, not_
+        from sqlalchemy.orm import selectinload
         
-        query = session.query(Product).filter(
-            Product.nome.ilike(f"%{name}%")
-        )
+        # Validação de entrada
+        if not name or not name.strip():
+            return []
         
-        # A filtragem de kits será feita após buscar os produtos para evitar problemas de tipo no PostgreSQL
-        products = query.all()
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))  # Limite máximo de 1000
         
-        # Se exclude_kits, filtra produtos que têm cod_kit E têm produto pai correspondente
+        query = session.query(Product).options(
+            selectinload(Product.categoria),
+            selectinload(Product.subcategoria),
+            selectinload(Product.imagens)
+        ).filter(Product.nome.ilike(f"%{name.strip()}%"))
+        
+        # Otimização: Filtragem de kits no SQL ao invés de Python
         if exclude_kits:
-            filtered_products = []
-            for product in products:
-                # Se não tem cod_kit, inclui na lista
-                if product.cod_kit is None:
-                    filtered_products.append(product)
-                else:
-                    # Se tem cod_kit, verifica se existe produto pai
-                    # Converte cod_kit para string (pode vir como int do banco)
-                    cod_kit_str = str(product.cod_kit) if product.cod_kit is not None else None
-                    if cod_kit_str:
-                        parent = self.get_by_codigo(cod_kit_str, session)
-                        # Só exclui se tiver produto pai (não inclui na lista)
-                        # Se não tiver pai, inclui na lista
-                        if not parent:
-                            filtered_products.append(product)
-                    else:
-                        # Se cod_kit for None após conversão, inclui na lista
-                        filtered_products.append(product)
-            return filtered_products
+            # Filtra: produtos sem cod_kit OU produtos com cod_kit mas sem produto pai
+            # Subquery verifica se existe produto com codigo igual ao cod_kit do produto atual
+            from sqlalchemy import alias
+            ProductParent = alias(Product.__table__)
+            parent_exists = exists().select_from(ProductParent).where(
+                ProductParent.c.codigo == Product.cod_kit
+            )
+            query = query.filter(
+                or_(
+                    Product.cod_kit.is_(None),
+                    not_(parent_exists)
+                )
+            )
         
-        return products
+        return query.offset(skip).limit(limit).all()
 
-    def get_by_price_range(self, min_price: Decimal, max_price: Decimal, session: Session) -> List[Product]:
+    def get_by_price_range(self, min_price: Decimal, max_price: Decimal, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         """Busca products por faixa de preço"""
-        return session.query(Product).filter(
+        from sqlalchemy.orm import selectinload
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        return session.query(Product).options(
+            selectinload(Product.categoria),
+            selectinload(Product.subcategoria),
+            selectinload(Product.imagens)
+        ).filter(
             Product.valor_base.between(min_price, max_price)
-        ).all()
+        ).offset(skip).limit(limit).all()
 
-    def search_by_description(self, description: str, session: Session) -> List[Product]:
+    def search_by_description(self, description: str, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         """Busca products por descrição"""
-        return session.query(Product).filter(
-            Product.descricao.ilike(f"%{description}%")
-        ).all()
+        from sqlalchemy.orm import selectinload
+        
+        # Validação de entrada
+        if not description or not description.strip():
+            return []
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        return session.query(Product).options(
+            selectinload(Product.categoria),
+            selectinload(Product.subcategoria),
+            selectinload(Product.imagens)
+        ).filter(
+            Product.descricao.ilike(f"%{description.strip()}%")
+        ).offset(skip).limit(limit).all()
 
-    def get_products_with_images(self, session: Session) -> List[Product]:
+    def get_products_with_images(self, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         """Busca products que possuem imagens"""
-        return session.query(Product).join(Product.imagens).distinct().all()
+        from sqlalchemy.orm import selectinload
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        return session.query(Product).options(
+            selectinload(Product.categoria),
+            selectinload(Product.subcategoria),
+            selectinload(Product.imagens)
+        ).join(Product.imagens).distinct().offset(skip).limit(limit).all()
 
     def update_status(self, product_id: int, ativo: bool, session: Session) -> bool:
         """Atualiza status ativo/inativo do product"""
         product = self.get_by_id(product_id, session)
         if product:
             product.ativo = ativo
-            session.commit()
+            session.flush()
             return True
         return False
 
-    def get_products_by_categories(self, categoria_ids: List[int], session: Session) -> List[Product]:
+    def get_products_by_categories(self, categoria_ids: List[int], session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         """Busca products por múltiplas categorias"""
-        return session.query(Product).filter(
+        from sqlalchemy.orm import selectinload
+        
+        # Validação de entrada
+        if not categoria_ids:
+            return []
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        return session.query(Product).options(
+            selectinload(Product.categoria),
+            selectinload(Product.subcategoria),
+            selectinload(Product.imagens)
+        ).filter(
             Product.id_categoria.in_(categoria_ids)
-        ).all()
+        ).offset(skip).limit(limit).all()
 
     def get_all_with_filters(
         self, 
@@ -167,6 +237,27 @@ class ProductRepositoryImpl(IProductRepository):
             # Ordenação padrão por ID
             query = query.order_by(Product.id_produto)
         
+        # Validação de paginação
+        skip = max(0, skip)
+        if limit is not None:
+            limit = max(1, min(limit, 1000))
+        
+        # Otimização: Filtragem de kits no SQL ao invés de Python
+        if exclude_kits:
+            # Filtra: produtos sem cod_kit OU produtos com cod_kit mas sem produto pai
+            from sqlalchemy import exists, or_, not_, alias
+            # Subquery verifica se existe produto com codigo igual ao cod_kit do produto atual
+            ProductParent = alias(Product.__table__)
+            parent_exists = exists().select_from(ProductParent).where(
+                ProductParent.c.codigo == Product.cod_kit
+            )
+            query = query.filter(
+                or_(
+                    Product.cod_kit.is_(None),
+                    not_(parent_exists)
+                )
+            )
+        
         # Aplica skip
         if skip > 0:
             query = query.offset(skip)
@@ -175,34 +266,10 @@ class ProductRepositoryImpl(IProductRepository):
         if limit is not None:
             query = query.limit(limit)
         
-        # A filtragem de kits será feita após buscar os produtos para evitar problemas de tipo no PostgreSQL
         products = query.all()
-        
-        # Se exclude_kits, filtra produtos que têm cod_kit E têm produto pai correspondente
-        if exclude_kits:
-            filtered_products = []
-            for product in products:
-                # Se não tem cod_kit, inclui na lista
-                if product.cod_kit is None:
-                    filtered_products.append(product)
-                else:
-                    # Se tem cod_kit, verifica se existe produto pai
-                    # Converte cod_kit para string (pode vir como int do banco)
-                    cod_kit_str = str(product.cod_kit) if product.cod_kit is not None else None
-                    if cod_kit_str:
-                        parent = self.get_by_codigo(cod_kit_str, session)
-                        # Só exclui se tiver produto pai (não inclui na lista)
-                        # Se não tiver pai, inclui na lista
-                        if not parent:
-                            filtered_products.append(product)
-                    else:
-                        # Se cod_kit for None após conversão, inclui na lista
-                        filtered_products.append(product)
-            return filtered_products
-        
         return products
 
-    def get_by_cod_kit(self, cod_kit: str, exclude_product_id: Optional[int] = None, session: Session = None) -> List[Product]:
+    def get_by_cod_kit(self, cod_kit: str, exclude_product_id: Optional[int] = None, session: Session = None, skip: int = 0, limit: int = 100) -> List[Product]:
         """
         Busca produtos que pertencem a um kit.
         
@@ -214,14 +281,24 @@ class ProductRepositoryImpl(IProductRepository):
         - Itens do kit: cod_kit="9090"
         - Busca: get_by_cod_kit("9090") retorna todos os produtos com cod_kit="9090"
         """
+        from sqlalchemy.orm import selectinload
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
         # Garante que cod_kit seja string (pode vir como int do banco)
         cod_kit_str = str(cod_kit) if cod_kit is not None else None
-        query = session.query(Product).filter(Product.cod_kit == cod_kit_str)
+        query = session.query(Product).options(
+            selectinload(Product.categoria),
+            selectinload(Product.subcategoria),
+            selectinload(Product.imagens)
+        ).filter(Product.cod_kit == cod_kit_str)
         
         if exclude_product_id is not None:
             query = query.filter(Product.id_produto != exclude_product_id)
         
-        return query.all()
+        return query.offset(skip).limit(limit).all()
 
     def get_by_ids(self, product_ids: List[int], session: Session) -> List[Product]:
         """Busca produtos por lista de IDs (em lote) com apenas os campos necessários para preço."""

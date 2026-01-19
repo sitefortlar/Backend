@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, ForeignKey
+from sqlalchemy import Integer, String, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List
 
@@ -19,6 +19,11 @@ class Subcategory(Base, TimestampMixin, BaseMixin):
         nullable=False
     )
     nome: Mapped[str] = mapped_column(String(150), nullable=False)
+
+    __table_args__ = (
+        Index('idx_subcategoria_nome', 'nome'),
+        Index('idx_subcategoria_categoria', 'id_categoria'),
+    )
 
     # Relacionamentos
     categoria: Mapped['Category'] = relationship('Category', back_populates='subcategorias')

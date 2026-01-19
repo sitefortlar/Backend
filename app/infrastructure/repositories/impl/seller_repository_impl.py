@@ -39,14 +39,27 @@ class SellerRepositoryImpl(ISellerRepository):
 
     def exists_by_id(self, seller_id: int, session: Session) -> bool:
         """Verifica se vendedor existe por ID"""
-        return session.query(Seller).filter(Seller.id_vendedor == seller_id).first() is not None
+        from sqlalchemy import exists
+        return session.query(exists().where(Seller.id_vendedor == seller_id)).scalar()
 
-    def search_by_name(self, name: str, session: Session) -> List[Seller]:
+    def search_by_name(self, name: str, session: Session, skip: int = 0, limit: int = 100) -> List[Seller]:
         """Busca vendedores por nome"""
+        # Validação de entrada
+        if not name or not name.strip():
+            return []
+        
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
         return session.query(Seller).filter(
-            Seller.nome.ilike(f"%{name}%")
-        ).all()
+            Seller.nome.ilike(f"%{name.strip()}%")
+        ).offset(skip).limit(limit).all()
 
-    def get_active_sellers(self, session: Session) -> List[Seller]:
+    def get_active_sellers(self, session: Session, skip: int = 0, limit: int = 100) -> List[Seller]:
         """Busca vendedores ativos"""
-        return session.query(Seller).filter(Seller.ativo == True).all()
+        # Validação de paginação
+        skip = max(0, skip)
+        limit = max(1, min(limit, 1000))
+        
+        return session.query(Seller).filter(Seller.ativo == True).offset(skip).limit(limit).all()

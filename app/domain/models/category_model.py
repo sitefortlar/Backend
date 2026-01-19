@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String
+from sqlalchemy import Integer, String, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List
 
@@ -15,7 +15,11 @@ class Category(Base, TimestampMixin, BaseMixin):
     __tablename__ = 'categoria'
 
     id_categoria: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    nome: Mapped[str] = mapped_column(String(150), nullable=False, unique=True)
+    nome: Mapped[str] = mapped_column(String(150), nullable=False, unique=True, index=True)
+
+    __table_args__ = (
+        Index('idx_categoria_nome_search', 'nome'),
+    )
 
     # Relacionamentos
     subcategorias: Mapped[List['Subcategory']] = relationship(
