@@ -254,7 +254,40 @@ class SupabaseService:
         """
         clean = (path or "").lstrip("/")
         return f"{self.url}/storage/v1/object/public/{self.bucket}/{clean}"
-    
+
+    def path_from_public_url(self, public_url: str) -> Optional[str]:
+        """
+        Extrai o path no bucket a partir da URL pública do Supabase.
+        Ex: https://xxx.supabase.co/storage/v1/object/public/bucket/produtos/abc.jpg -> produtos/abc.jpg
+        """
+        if not public_url or not public_url.strip():
+            return None
+        prefix = f"{self.url}/storage/v1/object/public/{self.bucket}/"
+        if not public_url.startswith(prefix):
+            return None
+        return public_url[len(prefix):].lstrip("/")
+
+    def delete_file(self, path: str) -> bool:
+        """
+        Deleta um único arquivo no Supabase Storage.
+
+        Args:
+            path: Caminho do arquivo no bucket (ex: produtos/123.jpg ou produtos/shared/xyz.jpg)
+
+        Returns:
+            True se deletou com sucesso, False caso contrário
+        """
+        try:
+            path = (path or "").strip().lstrip("/")
+            if not path:
+                return False
+            self.client.storage.from_(self.bucket).remove([path])
+            logger.info(f"Arquivo deletado no Storage: {path}")
+            return True
+        except Exception as e:
+            logger.warning(f"Erro ao deletar arquivo {path} no Supabase: {e}")
+            return False
+
     def delete_all_images_in_folder(self, folder: str = "produtos") -> bool:
         """
         Deleta todos os arquivos de uma pasta no Supabase Storage

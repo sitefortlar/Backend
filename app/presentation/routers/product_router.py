@@ -14,6 +14,10 @@ from app.infrastructure.configs.database_config import Session as DBSession
 
 # Use Cases
 from app.application.usecases.impl.create_product_use_case import CreateProductUseCase
+from app.application.usecases.impl.update_product_use_case import UpdateProductUseCase
+from app.application.usecases.impl.get_product_use_case import GetProductUseCase
+from app.application.usecases.impl.add_product_image_use_case import AddProductImageUseCase
+from app.application.usecases.impl.delete_product_image_use_case import DeleteProductImageUseCase
 
 # Services
 from app.application.service.job_service import JobService, JobStatus
@@ -30,6 +34,7 @@ from app.infrastructure.configs.security_config import verify_user_permission
 from app.presentation.routers.request.excel_request import (
     BulkCreateResponse
 )
+from app.presentation.routers.request.product_request import UpdateProductRequest
 from app.presentation.routers.response.product_response import ProductResponse
 from app.presentation.routers.response.cart_prices_response import CartPricesResponse
 
@@ -212,7 +217,6 @@ async def get_product(
     - Dependency Inversion: Depende de abstrações (use case) não de implementações
     """
     try:
-        from app.application.usecases.impl.get_product_use_case import GetProductUseCase
         use_case: GetProductUseCase = GetProductUseCase()
         request_data = {
             'product_id': product_id,
@@ -226,6 +230,103 @@ async def get_product(
         raise HTTPException(status_code=500, detail=f"Erro ao buscar produto: {str(e)}")
 
 
+@produto_router.put(
+    "/{product_id}",
+    summary="Atualizar produto (admin)",
+    description="Atualiza dados do produto: nome, descrição, preço, categoria, subcategoria, ativo, etc. Apenas campos enviados são alterados.",
+    response_model=ProductResponse
+)
+async def update_product(
+    product_id: int = Path(..., description="ID do produto"),
+    estado: str = Query("SP", description="Estado para cálculo de preços na resposta (ex: SP, MG, ES)"),
+    body: UpdateProductRequest = ...,
+    session: Session = Depends(get_session),
+    current_user=Depends(verify_user_permission(role=RoleEnum.ADMIN))
+) -> Any:
+    """Atualiza um produto. Envie apenas os campos que deseja alterar."""
+    try:
+        payload = body.model_dump(exclude_none=True)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Envie pelo menos um campo para atualizar"
+            )
+        UpdateProductUseCase().execute(
+            {"product_id": product_id, **payload},
+            session
+        )
+        product_data = GetProductUseCase().execute(
+            {"product_id": product_id, "estado": estado},
+            session
+        )
+        return ProductResponse(**product_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao atualizar produto: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar produto: {str(e)}")
+
+
+@produto_router.post(
+    "/{product_id}/images",
+    summary="Adicionar imagem ao produto (admin)",
+    description="Faz upload de uma imagem para o Supabase e associa ao produto.",
+    response_model=dict
+)
+async def add_product_image(
+    product_id: int = Path(..., description="ID do produto"),
+    file: UploadFile = File(..., description="Imagem (jpg, png, gif, webp)"),
+    session: Session = Depends(get_session),
+    current_user=Depends(verify_user_permission(role=RoleEnum.ADMIN))
+) -> Any:
+    """Adiciona uma imagem ao produto. A imagem é enviada ao Supabase Storage."""
+    try:
+        content = await file.read()
+        content_type = file.content_type or "image/jpeg"
+        result = AddProductImageUseCase().execute(
+            {
+                "product_id": product_id,
+                "file_bytes": content,
+                "file_name": file.filename or "image.jpg",
+                "content_type": content_type,
+            },
+            session
+        )
+        return {
+            "id_imagem": result.id_imagem,
+            "url": result.url,
+            "id_produto": product_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao adicionar imagem: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao adicionar imagem: {str(e)}")
+
+
+@produto_router.delete(
+    "/{product_id}/images/{image_id}",
+    summary="Remover imagem do produto (admin)",
+    description="Remove a imagem do banco e opcionalmente do Supabase Storage.",
+    status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_product_image(
+    product_id: int = Path(..., description="ID do produto"),
+    image_id: int = Path(..., description="ID da imagem"),
+    session: Session = Depends(get_session),
+    current_user=Depends(verify_user_permission(role=RoleEnum.ADMIN))
+) -> None:
+    """Remove uma imagem do produto."""
+    try:
+        DeleteProductImageUseCase().execute(
+            {"product_id": product_id, "image_id": image_id},
+            session
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao remover imagem: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao remover imagem: {str(e)}")
 
 
 def _process_product_upload_async(job_id: str, file_path: str, file_format: str, clean_before: bool = False):
