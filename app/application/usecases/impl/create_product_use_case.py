@@ -4,6 +4,7 @@ import io
 import datetime
 import hashlib
 import pandas as pd
+from decimal import Decimal
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
@@ -261,47 +262,51 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                     seen_produtos[codigo] = existing_product
 
                 if existing_product:
-                    # Atualiza produto existente
+                    # Atualiza produto existente: nome e valores (valor_base, quantidade, etc.) são aplicados quando mudam
                     updated = False
-                    if p.get('descricao') and existing_product.descricao != p.get('descricao'):
-                        existing_product.descricao = p.get('descricao')
+                    if nome and existing_product.nome != nome:
+                        existing_product.nome = nome
                         updated = True
-                    if p.get('valor_base') is not None and existing_product.valor_base != p.get('valor_base'):
-                        existing_product.valor_base = p.get('valor_base')
-                        updated = True
+                    new_desc = p.get('descricao')
+                    if new_desc is not None:
+                        curr_desc = existing_product.descricao or ""
+                        new_desc_str = str(new_desc).strip() if new_desc else ""
+                        if curr_desc != new_desc_str:
+                            existing_product.descricao = new_desc_str or None
+                            updated = True
+                    # Valores: normaliza para Decimal para não perder atualização por diferença de tipo
+                    new_valor = p.get('valor_base')
+                    if new_valor is not None:
+                        curr_val = existing_product.valor_base
+                        new_dec = Decimal(str(new_valor)).quantize(Decimal("0.01"))
+                        curr_dec = curr_val.quantize(Decimal("0.01")) if curr_val is not None else None
+                        if curr_dec != new_dec:
+                            existing_product.valor_base = new_dec
+                            updated = True
                     if categoria and existing_product.id_categoria != categoria.id_categoria:
                         existing_product.id_categoria = categoria.id_categoria
                         updated = True
                     if sub and existing_product.id_subcategoria != sub.id_subcategoria:
                         existing_product.id_subcategoria = sub.id_subcategoria
                         updated = True
-                    
-                    # Atualiza quantidade e cod_kit
                     quantidade = p.get('quantidade', 1)
-                    if existing_product.quantidade != quantidade:
-                        existing_product.quantidade = quantidade
+                    qty = int(quantidade) if quantidade is not None else 1
+                    if existing_product.quantidade != qty:
+                        existing_product.quantidade = qty
                         updated = True
-                    
                     codigo_amarracao = p.get('codigo_amarracao')
-                    # cod_kit agora é string (mesmo tipo do codigo)
                     cod_kit = codigo_amarracao if codigo_amarracao else None
                     logger.debug(f"Produto {codigo}: codigo_amarracao={codigo_amarracao} -> cod_kit={cod_kit}")
-                    
-                    # Compara considerando None
                     current_cod_kit = existing_product.cod_kit if existing_product.cod_kit is not None else None
                     new_cod_kit = cod_kit if cod_kit is not None else None
-                    
                     if current_cod_kit != new_cod_kit:
                         existing_product.cod_kit = cod_kit
                         updated = True
                         logger.debug(f"Atualizando cod_kit do produto {codigo}: {current_cod_kit} -> {new_cod_kit}")
-                    
                     if updated:
                         self.product_repository.update(existing_product, session)
                         summary["produtos_updated"] += 1
                     produto = existing_product
-                    
-                    # Processa imagens do produto (atualiza/remove/adiciona)
                     self._process_product_images(produto, p.get('image_urls', []), session, summary)
                 else:
                     # Cria novo produto
@@ -690,14 +695,25 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                 existing_product = self.product_repository.get_by_codigo(product_code, session)
                 
                 if existing_product:
-                    # Atualiza produto existente
+                    # Atualiza produto existente: nome e valores aplicados quando mudam
                     updated = False
-                    if p.get('descricao') and existing_product.descricao != p.get('descricao'):
-                        existing_product.descricao = p.get('descricao')
+                    if product_nome and existing_product.nome != product_nome:
+                        existing_product.nome = product_nome
                         updated = True
-                    if p.get('valor_base') is not None and existing_product.valor_base != p.get('valor_base'):
-                        existing_product.valor_base = p.get('valor_base')
-                        updated = True
+                    if p.get('descricao') is not None:
+                        curr_desc = existing_product.descricao or ""
+                        new_desc_str = str(p.get('descricao')).strip() if p.get('descricao') else ""
+                        if curr_desc != new_desc_str:
+                            existing_product.descricao = new_desc_str or None
+                            updated = True
+                    new_valor = p.get('valor_base')
+                    if new_valor is not None:
+                        curr_val = existing_product.valor_base
+                        new_dec = Decimal(str(new_valor)).quantize(Decimal("0.01"))
+                        curr_dec = curr_val.quantize(Decimal("0.01")) if curr_val is not None else None
+                        if curr_dec != new_dec:
+                            existing_product.valor_base = new_dec
+                            updated = True
                     if categoria and existing_product.id_categoria != categoria.id_categoria:
                         existing_product.id_categoria = categoria.id_categoria
                         updated = True
