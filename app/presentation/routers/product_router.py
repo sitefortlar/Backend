@@ -357,7 +357,14 @@ def _process_product_upload_async(job_id: str, file_path: str, file_format: str,
                 'clean_before': clean_before
             }
             
-            logger.info(f"Job {job_id}: Iniciando processamento assíncrono")
+            logger.info(
+                f"Job {job_id}: Iniciando processamento assíncrono | "
+                f"file_format={file_format} clean_before={clean_before}"
+            )
+            if clean_before:
+                logger.warning(
+                    f"Job {job_id}: clean_before=True -> será removido todos os produtos e imagens antes de importar (substituição total)"
+                )
             result = use_case.execute(request, db_session)
             
             # Commit da transação
@@ -409,6 +416,7 @@ def _process_product_upload_async(job_id: str, file_path: str, file_format: str,
 )
 async def create_product(
         file: UploadFile = File(..., description="Arquivo CSV ou Excel com estrutura completa"),
+        clean_before: bool = Query(False, description="Se true, limpa todos os produtos antes de importar (substituição total)"),
         background_tasks: BackgroundTasks = BackgroundTasks(),
         session: DBSession = Depends(get_session),
         current_user=Depends(verify_user_permission(role=RoleEnum.ADMIN))
@@ -437,6 +445,9 @@ async def create_product(
     4. Criar kits e associar produtos baseado na coluna KIT ou Código Amarração
     5. Criar preços por região/prazo (formato CSV)
     6. Processar imagens e fazer upload para Supabase Storage
+
+    **Query params:**
+    - `clean_before`: se `true`, remove todos os produtos (e imagens) antes de importar (substituição total).
 
     **Resposta:**
     ```json
@@ -485,10 +496,13 @@ async def create_product(
             job_id=job_id,
             file_path=tmp_path,
             file_format='csv' if is_csv else 'excel',
-            clean_before=False
+            clean_before=clean_before
         )
         
-        logger.info(f"Job {job_id} criado e processamento assíncrono iniciado")
+        logger.info(
+            f"Job {job_id} criado e processamento assíncrono iniciado | "
+            f"arquivo={file.filename} clean_before={clean_before}"
+        )
         
         return JSONResponse(
             status_code=status.HTTP_200_OK,

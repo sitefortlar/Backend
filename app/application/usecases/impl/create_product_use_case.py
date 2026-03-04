@@ -107,13 +107,21 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
         # Limpa todos os dados se solicitado
         deleted_summary = {}
         if clean_before:
-            logger.info("Modo PUT: Limpando todos os dados antes de processar")
+            logger.info(
+                "clean_before=True | Será removido: todos os produtos e imagens (banco + Supabase) antes de importar"
+            )
             deleted_summary = self._clean_all_data(session)
             summary["deleted_summary"] = deleted_summary
+            logger.info(
+                f"Limpeza concluída | removidos: {deleted_summary.get('produtos_deletados', 0)} produtos, "
+                f"{deleted_summary.get('imagens_deletados', 0)} imagens (banco), "
+                f"{deleted_summary.get('imagens_supabase_deletadas', 0)} no Storage"
+            )
 
         try:
             # Lê e valida a planilha
             df = self.loader.read(file_path)
+            logger.info(f"Planilha lida | linhas={len(df)} colunas={list(df.columns)}")
             
             # Detecta formato pelas colunas (CSV e Excel novo têm mesma estrutura)
             has_csv_cols = all(col in df.columns for col in ['codigo', 'Nome'])
@@ -140,6 +148,11 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                     detail="Nenhum produto válido encontrado na planilha"
                 )
 
+            logger.info(
+                f"Planilha mapeada | formato={detected_format} | {len(produtos_data)} produto(s) a processar "
+                f"(criar novos ou atualizar existentes)"
+            )
+
             # Dicionários para evitar duplicatas no mesmo run
             seen_categorias = {}
             seen_subcategorias = {}
@@ -159,7 +172,11 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         seen_categorias, seen_subcategorias
                     )
                 
-                logger.info(f"Processamento concluído. Resumo: {summary}")
+                logger.info(
+                    f"Processamento concluído | criados={summary['produtos_created']} "
+                    f"atualizados={summary['produtos_updated']} imagens_novas={summary['imagens_created']} "
+                    f"erros={len(summary['errors'])}"
+                )
                 
             except Exception as e:
                 session.rollback()
@@ -264,9 +281,11 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                 if existing_product:
                     # Atualiza produto existente: nome e valores (valor_base, quantidade, etc.) são aplicados quando mudam
                     updated = False
+                    changed_fields = []
                     if nome and existing_product.nome != nome:
                         existing_product.nome = nome
                         updated = True
+                        changed_fields.append("nome")
                     new_desc = p.get('descricao')
                     if new_desc is not None:
                         curr_desc = existing_product.descricao or ""
@@ -274,6 +293,7 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         if curr_desc != new_desc_str:
                             existing_product.descricao = new_desc_str or None
                             updated = True
+                            changed_fields.append("descricao")
                     # Valores: normaliza para Decimal para não perder atualização por diferença de tipo
                     new_valor = p.get('valor_base')
                     if new_valor is not None:
@@ -283,17 +303,21 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         if curr_dec != new_dec:
                             existing_product.valor_base = new_dec
                             updated = True
+                            changed_fields.append("valor_base")
                     if categoria and existing_product.id_categoria != categoria.id_categoria:
                         existing_product.id_categoria = categoria.id_categoria
                         updated = True
+                        changed_fields.append("id_categoria")
                     if sub and existing_product.id_subcategoria != sub.id_subcategoria:
                         existing_product.id_subcategoria = sub.id_subcategoria
                         updated = True
+                        changed_fields.append("id_subcategoria")
                     quantidade = p.get('quantidade', 1)
                     qty = int(quantidade) if quantidade is not None else 1
                     if existing_product.quantidade != qty:
                         existing_product.quantidade = qty
                         updated = True
+                        changed_fields.append("quantidade")
                     codigo_amarracao = p.get('codigo_amarracao')
                     cod_kit = codigo_amarracao if codigo_amarracao else None
                     logger.debug(f"Produto {codigo}: codigo_amarracao={codigo_amarracao} -> cod_kit={cod_kit}")
@@ -302,10 +326,16 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                     if current_cod_kit != new_cod_kit:
                         existing_product.cod_kit = cod_kit
                         updated = True
+                        changed_fields.append("cod_kit")
                         logger.debug(f"Atualizando cod_kit do produto {codigo}: {current_cod_kit} -> {new_cod_kit}")
                     if updated:
                         self.product_repository.update(existing_product, session)
                         summary["produtos_updated"] += 1
+                        logger.info(
+                            f"[ATUALIZAR] codigo={codigo} | campos alterados: {', '.join(changed_fields)}"
+                        )
+                    else:
+                        logger.info(f"[MANTER] codigo={codigo} | sem alterações nos dados do produto")
                     produto = existing_product
                     self._process_product_images(produto, p.get('image_urls', []), session, summary)
                 else:
@@ -340,6 +370,7 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                     produto = self.product_repository.create(produto, session)
                     seen_produtos[codigo] = produto
                     summary["produtos_created"] += 1
+                    logger.info(f"[CRIAR] codigo={codigo} | nome={nome}")
                     
                     # Processa imagens do produto
                     self._process_product_images(produto, p.get('image_urls', []), session, summary)
