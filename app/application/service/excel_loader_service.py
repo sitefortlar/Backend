@@ -14,15 +14,33 @@ REQUIRED_COLUMNS_EXCEL = [
     'REGIÃO', 'PRAZO DE ENTREGA', 'VALOR UNITÁRIO', 'KIT', 'OBSERVAÇÕES'
 ]
 
-# Colunas obrigatórias para formato CSV novo
+# Colunas obrigatórias para formato CSV novo (nomes canônicos após normalização)
 REQUIRED_COLUMNS_CSV = [
-    'codigo', 'id_categoria', 'id_subcategoria', 'Nome', 
+    'codigo', 'id_categoria', 'id_subcategoria', 'Nome',
     'Quantidade', 'Descricao', 'Vlr Bruto', 'Vlr Unitario'
 ]
 # Colunas opcionais
 OPTIONAL_COLUMNS_CSV = [
     'image_url', 'image_urls', 'imagem_url', 'imagens_url'
 ]
+
+# Mapeamento case-insensitive: lowercase da coluna -> nome canônico esperado pelo código
+COLUMN_CANONICAL_MAP = {
+    'codigo': 'codigo',
+    'id_categoria': 'id_categoria',
+    'id_subcategoria': 'id_subcategoria',
+    'nome': 'Nome',
+    'quantidade': 'Quantidade',
+    'descricao': 'Descricao',
+    'vlr bruto': 'Vlr Bruto',
+    'vlr unitario': 'Vlr Unitario',
+    'codigo amarração': 'Codigo Amarração',
+    'codigo amarracao': 'Codigo Amarração',
+    'image_url': 'image_url',
+    'image_urls': 'image_urls',
+    'imagem_url': 'imagem_url',
+    'imagens_url': 'imagens_url',
+}
 
 
 class ExcelLoaderService:
@@ -102,11 +120,17 @@ class ExcelLoaderService:
                 normalized_columns.append(normalized_col)
             
             df.columns = normalized_columns
-            
-            # Para CSV, mantém case original. Para Excel, converte para uppercase
-            if file_format != 'csv':
-                df.columns = [c.upper() for c in df.columns]
-            
+
+            # Formato novo (CSV ou Excel com colunas codigo/nome): normaliza case-insensitive
+            has_new_format = any(
+                str(c).strip().lower() in COLUMN_CANONICAL_MAP for c in df.columns
+            )
+            if has_new_format:
+                df = self._normalize_columns_case_insensitive(df)
+            elif file_format == 'excel':
+                # Formato Excel antigo: mantém uppercase (PRODUTO, CATEGORIA, etc.)
+                df.columns = [str(c).strip().upper() for c in df.columns]
+
             logger.info(f"Arquivo lido: {len(df)} linhas, {len(df.columns)} colunas")
             logger.debug(f"Colunas encontradas: {list(df.columns)}")
             
@@ -114,6 +138,18 @@ class ExcelLoaderService:
         except Exception as e:
             logger.error(f"Erro ao ler arquivo '{file_path}': {e}")
             raise ValueError(f"Erro ao processar arquivo: {str(e)}")
+
+    def _normalize_columns_case_insensitive(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Normaliza nomes das colunas para o formato canônico (case-insensitive)."""
+        rename_map = {}
+        for col in df.columns:
+            key = str(col).strip().lower() if col is not None else ""
+            canonical = COLUMN_CANONICAL_MAP.get(key)
+            if canonical is not None and canonical not in rename_map.values():
+                rename_map[col] = canonical
+        if rename_map:
+            df = df.rename(columns=rename_map)
+        return df
 
     def validate_columns(self, df: pd.DataFrame, file_format: str = None) -> None:
         """Valida se as colunas obrigatórias estão presentes"""
