@@ -2,8 +2,10 @@
 
 
 def order_html(
-    itens: list, 
-    valor_total: float, 
+    itens: list,
+    subtotal_sem_ipi: float,
+    valor_ipi: float,
+    total_com_ipi: float,
     forma_pagamento: str,
     empresa_nome: str = "",
     endereco = None,
@@ -14,7 +16,9 @@ def order_html(
     
     Args:
         itens: Lista de itens com informações do produto (codigo, nome, quantidade, preco_unitario, subtotal)
-        valor_total: Valor total do order
+        subtotal_sem_ipi: Soma dos itens (base para IPI)
+        valor_ipi: IPI 6,5% sobre o subtotal
+        total_com_ipi: Subtotal + IPI
         forma_pagamento: Forma de pagamento escolhida (À Vista, 30 Dias, 60 Dias)
         empresa_nome: Nome da empresa/cliente
         endereco: Objeto Address com dados do endereço
@@ -27,7 +31,7 @@ def order_html(
     # Constrói a tabela de itens
     itens_html = ""
     for item in itens:
-        codigo = item.get('codigo', 'N/A')
+        codigo = item.get('codigo') or 'N/A'
         nome_produto = item.get('nome', 'Produto')
         quantidade = item.get('quantidade', 0)
         preco_unitario = item.get('preco_unitario', 0.0)
@@ -180,9 +184,16 @@ def order_html(
             .total-row {{
                 display: flex;
                 justify-content: space-between;
+                font-size: 16px;
+                color: #2c3e50;
+                margin-bottom: 8px;
+            }}
+            .total-row.final {{
                 font-size: 18px;
                 font-weight: bold;
-                color: #2c3e50;
+                margin-top: 12px;
+                padding-top: 12px;
+                border-top: 1px solid #bdc3c7;
             }}
             .payment-info {{
                 background-color: #fff3cd;
@@ -246,8 +257,16 @@ def order_html(
                 
                 <div class="total-section">
                     <div class="total-row">
-                        <span>Total do Order:</span>
-                        <span>R$ {valor_total:.2f}</span>
+                        <span>Subtotal (sem IPI):</span>
+                        <span>R$ {subtotal_sem_ipi:.2f}</span>
+                    </div>
+                    <div class="total-row">
+                        <span>IPI (6,5%):</span>
+                        <span>R$ {valor_ipi:.2f}</span>
+                    </div>
+                    <div class="total-row final">
+                        <span>Total com IPI:</span>
+                        <span>R$ {total_com_ipi:.2f}</span>
                     </div>
                 </div>
                 

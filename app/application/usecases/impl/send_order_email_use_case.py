@@ -16,11 +16,16 @@ from app.infrastructure.repositories.company_repository_interface import ICompan
 from app.infrastructure.repositories.impl.company_repository_impl import CompanyRepositoryImpl
 from app.infrastructure.repositories.order_repository_interface import IOrderRepository
 from app.infrastructure.repositories.impl.order_repository_impl import OrderRepositoryImpl
+from app.infrastructure.repositories.product_repository_interface import IProductRepository
+from app.infrastructure.repositories.impl.product_repository_impl import ProductRepositoryImpl
 from app.domain.models.dtos.send_order_email_dto import (
     SendOrderEmailUseCaseRequest,
     SendOrderEmailUseCaseResponse,
     FormaPagamentoEnum
 )
+
+
+IPI_ALIQUOTA = Decimal("0.065")
 
 
 def _map_payment_method(forma_pagamento: FormaPagamentoEnum) -> str:
@@ -40,6 +45,7 @@ class SendOrderEmailUseCase(UseCase[SendOrderEmailUseCaseRequest, SendOrderEmail
         self.company_repository: ICompanyRepository = CompanyRepositoryImpl()
         self.email_service: EmailService = EmailService()
         self.order_repository: IOrderRepository = OrderRepositoryImpl()
+        self.product_repository: IProductRepository = ProductRepositoryImpl()
 
     def execute(self, request: SendOrderEmailUseCaseRequest, session=None) -> SendOrderEmailUseCaseResponse:
         """Executa o caso de uso de envio de order por email"""
@@ -52,8 +58,14 @@ class SendOrderEmailUseCase(UseCase[SendOrderEmailUseCaseRequest, SendOrderEmail
             # Valida email da empresa
             email_empresa = self._validate_company_email(company)
             
-            # Processa itens e calcula total
-            itens_formatados, valor_total = self._process_order_items(request.itens)
+            # Processa itens (código enriquecido pelo banco quando ausente no request) e subtotal
+            itens_formatados, subtotal_sem_ipi = self._process_order_items(request.itens, session)
+
+            subtotal_dec = Decimal(str(subtotal_sem_ipi))
+            valor_ipi_dec = (subtotal_dec * IPI_ALIQUOTA).quantize(Decimal("0.01"))
+            total_com_ipi_dec = subtotal_dec + valor_ipi_dec
+            valor_ipi = float(valor_ipi_dec)
+            total_com_ipi = float(total_com_ipi_dec)
             
             # Mapeia forma de pagamento
             forma_pagamento_texto = _map_payment_method(request.forma_pagamento)
@@ -62,15 +74,17 @@ class SendOrderEmailUseCase(UseCase[SendOrderEmailUseCaseRequest, SendOrderEmail
             self._send_order_email(
                 company=company,
                 itens=itens_formatados,
-                valor_total=valor_total,
+                subtotal_sem_ipi=subtotal_sem_ipi,
+                valor_ipi=valor_ipi,
+                total_com_ipi=total_com_ipi,
                 forma_pagamento=forma_pagamento_texto,
                 email_empresa=email_empresa
             )
 
-            # Cria o order no banco de dados
+            # Cria o order no banco de dados (valor total = produtos + IPI)
             order = self._create_order_with_items(
                 company_id=request.company_id,
-                valor_total=Decimal(str(valor_total)),
+                valor_total=total_com_ipi_dec,
                 itens=request.itens,
                 session=session
             )
@@ -83,7 +97,7 @@ class SendOrderEmailUseCase(UseCase[SendOrderEmailUseCaseRequest, SendOrderEmail
             return SendOrderEmailUseCaseResponse(
                 message="Order enviado por email com sucesso",
                 email_enviado=email_empresa,
-                valor_total=valor_total,
+                valor_total=total_com_ipi,
                 quantidade_itens=len(itens_formatados),
                 empresa=company.nome_fantasia or company.razao_social,
                 forma_pagamento=forma_pagamento_texto
@@ -124,14 +138,36 @@ class SendOrderEmailUseCase(UseCase[SendOrderEmailUseCaseRequest, SendOrderEmail
             )
         return email_empresa
 
-    def _process_order_items(self, itens: list) -> tuple[list, float]:
-        """Processa itens do carrinho e calcula valor total"""
+    def _resolve_codigos_produto(self, itens: list, session) -> dict[int, str]:
+        """Carrega códigos do banco para ids cujo código não veio no request."""
+        ids_sem_codigo = []
+        for item in itens:
+            if not (item.codigo or "").strip():
+                ids_sem_codigo.append(item.id_produto)
+        if not session or not ids_sem_codigo:
+            return {}
+        unique_ids = list(dict.fromkeys(ids_sem_codigo))
+        products = self.product_repository.get_by_ids(unique_ids, session)
+        codigo_por_id = {p.id_produto: p.codigo for p in products}
+        missing = set(unique_ids) - codigo_por_id.keys()
+        for pid in missing:
+            logger.warning(
+                f"Produto id={pid} não encontrado ao enriquecer código para e-mail do pedido"
+            )
+        return codigo_por_id
+
+    def _process_order_items(self, itens: list, session) -> tuple[list, float]:
+        """Processa itens do carrinho, garante código (request ou banco) e calcula subtotal sem IPI."""
+        codigo_por_id = self._resolve_codigos_produto(itens, session)
         itens_formatados = []
-        valor_total = 0.0
+        subtotal_sem_ipi = 0.0
 
         for item in itens:
+            codigo = (item.codigo or "").strip()
+            if not codigo:
+                codigo = codigo_por_id.get(item.id_produto) or "N/A"
             itens_formatados.append({
-                'codigo': item.codigo,
+                'codigo': codigo,
                 'nome': item.nome,
                 'quantidade': item.quantidade_pedida,
                 'preco_unitario': float(item.valor_unitario),
@@ -139,7 +175,7 @@ class SendOrderEmailUseCase(UseCase[SendOrderEmailUseCaseRequest, SendOrderEmail
                 'categoria': item.categoria or 'N/A',
                 'subcategoria': item.subcategoria or 'N/A'
             })
-            valor_total += float(item.valor_total)
+            subtotal_sem_ipi += float(item.valor_total)
 
         if not itens_formatados:
             raise HTTPException(
@@ -147,13 +183,15 @@ class SendOrderEmailUseCase(UseCase[SendOrderEmailUseCaseRequest, SendOrderEmail
                 detail="Nenhum produto encontrado no carrinho"
             )
 
-        return itens_formatados, valor_total
+        return itens_formatados, subtotal_sem_ipi
 
     def _send_order_email(
-        self, 
-        company: Company, 
-        itens: list, 
-        valor_total: float, 
+        self,
+        company: Company,
+        itens: list,
+        subtotal_sem_ipi: float,
+        valor_ipi: float,
+        total_com_ipi: float,
         forma_pagamento: str,
         email_empresa: str
     ) -> None:
@@ -163,14 +201,19 @@ class SendOrderEmailUseCase(UseCase[SendOrderEmailUseCaseRequest, SendOrderEmail
 
         html_email = order_html(
             itens=itens,
-            valor_total=valor_total,
+            subtotal_sem_ipi=subtotal_sem_ipi,
+            valor_ipi=valor_ipi,
+            total_com_ipi=total_com_ipi,
             forma_pagamento=forma_pagamento,
             empresa_nome=company.nome_fantasia or company.razao_social,
             endereco=endereco_principal,
             contato=contato_principal
         )
 
-        subject = f"Novo Order - {company.nome_fantasia or company.razao_social} - Total: R$ {valor_total:.2f}"
+        subject = (
+            f"Novo Order - {company.nome_fantasia or company.razao_social} "
+            f"- Total: R$ {total_com_ipi:.2f}"
+        )
         
         # Prepara lista de cópias (CC)
         cc_emails = []
