@@ -10,8 +10,7 @@ from app.application.service.email_service import EmailService
 from app.application.service.email.template.order_template import order_html
 import envs
 from app.domain.models.company_model import Company
-from app.domain.models.order_model import Order
-from app.domain.models.order_item_model import OrderItem
+from app.application.service.order_creation_service import IPI_ALIQUOTA, create_order_with_items
 from app.infrastructure.repositories.company_repository_interface import ICompanyRepository
 from app.infrastructure.repositories.impl.company_repository_impl import CompanyRepositoryImpl
 from app.infrastructure.repositories.order_repository_interface import IOrderRepository
@@ -23,9 +22,6 @@ from app.domain.models.dtos.send_order_email_dto import (
     SendOrderEmailUseCaseResponse,
     FormaPagamentoEnum
 )
-
-
-IPI_ALIQUOTA = Decimal("0.065")
 
 
 def _map_payment_method(forma_pagamento: FormaPagamentoEnum) -> str:
@@ -82,11 +78,11 @@ class SendOrderEmailUseCase(UseCase[SendOrderEmailUseCaseRequest, SendOrderEmail
             )
 
             # Cria o order no banco de dados (valor total = produtos + IPI)
-            order = self._create_order_with_items(
+            order = create_order_with_items(
                 company_id=request.company_id,
-                valor_total=total_com_ipi_dec,
                 itens=request.itens,
-                session=session
+                session=session,
+                order_repository=self.order_repository,
             )
 
             logger.info(f"✅ Order {order.id_pedido} criado com sucesso no banco de dados")
@@ -236,43 +232,4 @@ class SendOrderEmailUseCase(UseCase[SendOrderEmailUseCaseRequest, SendOrderEmail
             # O order será criado mesmo sem o email
             logger.warning(f"⚠️  Erro ao enviar email de order para {email_empresa}: {e}")
             logger.info("💡 Order será criado mesmo sem envio de email.")
-
-    def _create_order_entity(self, company_id: int, valor_total: Decimal) -> Order:
-        """Cria a entidade Order"""
-        return Order(
-            id_cliente=company_id,
-            valor_total=valor_total
-        )
-
-    def _create_order_item_entity(self, item) -> OrderItem:
-        """Cria a entidade OrderItem (id_pedido será preenchido automaticamente pelo relacionamento)"""
-        # O id_pedido será preenchido automaticamente pelo SQLAlchemy quando associado ao order
-        order_item = OrderItem(
-            id_pedido=0,  # Valor temporário, será preenchido pelo SQLAlchemy via relacionamento
-            id_produto=item.id_produto,
-            quantidade=item.quantidade_pedida,
-            preco_unitario=Decimal(str(item.valor_unitario)),
-            subtotal=Decimal(str(item.valor_total))
-        )
-        return order_item
-
-    def _create_order_with_items(
-        self, 
-        company_id: int, 
-        valor_total: Decimal, 
-        itens: list, 
-        session
-    ) -> Order:
-        """Cria order com itens no banco de dados"""
-        # Cria a entidade Order
-        order = self._create_order_entity(company_id, valor_total)
-        
-        # Cria os itens
-        for item in itens:
-            order_item = self._create_order_item_entity(item)
-            # Associa os itens ao order
-            order.itens.append(order_item)
-        
-        # Persiste o order com itens (os itens serão persistidos automaticamente pelo cascade)
-        return self.order_repository.create_order_with_items(order, session)
 

@@ -10,6 +10,7 @@ from app.application.usecases.impl.list_orders_use_case import ListOrdersUseCase
 from app.application.usecases.impl.get_order_use_case import GetOrderUseCase
 from app.application.usecases.impl.list_recent_orders_use_case import ListRecentOrdersUseCase
 from app.application.usecases.impl.send_order_email_use_case import SendOrderEmailUseCase
+from app.application.usecases.impl.reorder_order_use_case import ReorderOrderUseCase
 
 # Configs
 from app.infrastructure.configs.database_config import Session
@@ -19,7 +20,6 @@ from app.presentation.routers.request.order_request import (
     ListOrdersRequest,
     GetOrderRequest,
     ListOrdersByClienteRequest,
-    ListOrdersByStatusRequest,
     ListOrdersRecentesRequest,
     SendOrderEmailRequest
 )
@@ -27,6 +27,8 @@ from app.presentation.routers.response.order_response import (
     OrderResponse,
     ListOrdersResponse
 )
+from app.domain.models.enumerations.order_status_enumerations import OrderStatusEnum
+from app.domain.models.enumerations.role_enumerations import RoleEnum
 
 order_router = APIRouter(
     prefix="/orders",
@@ -42,13 +44,13 @@ order_router = APIRouter(
 @order_router.get(
     "",
     summary="Listar orders",
-    description="Lista todos os orders com filtros opcionais",
+    description="Listagem geral de pedidos (administrativo). Apenas usuários ADMIN. Filtros opcionais via query.",
     response_model=List[OrderResponse]
 )
 async def list_orders(
     request: ListOrdersRequest = Depends(),
     session: Session = Depends(get_session),
-    current_user = Depends(verify_user_permission())
+    _current_user=Depends(verify_user_permission(role=RoleEnum.ADMIN)),
 ) -> List[OrderResponse]:
     """
     Lista orders com filtros opcionais.
@@ -68,102 +70,19 @@ async def list_orders(
         raise HTTPException(status_code=500, detail=f"Erro ao listar orders: {str(e)}")
 
 
-@order_router.get(
-    "/{order_id}",
-    summary="Buscar order por ID",
-    description="Busca um order específico pelo ID",
-    response_model=OrderResponse
-)
-async def get_order(
-    order_id: int = Path(..., description="ID do order"),
-    include_items: bool = Query(False, description="Incluir itens do order"),
-    session: Session = Depends(get_session),
-    current_user = Depends(verify_user_permission())
-) -> OrderResponse:
-    """
-    Busca order por ID.
-    
-    Aplica os princípios SOLID:
-    - Single Responsibility: Endpoint apenas orquestra a chamada do use case
-    - Dependency Inversion: Depende de abstrações (use case) não de implementações
-    """
-    try:
-        use_case: GetOrderUseCase = GetOrderUseCase()
-        # Mapeia order_id para pedido_id (o use case ainda espera pedido_id)
-        request_dict = {"pedido_id": order_id, "include_items": include_items}
-        order_data = use_case.execute(request_dict, session)
-        return OrderResponse(**order_data)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao buscar order: {str(e)}")
-
-
-@order_router.get(
-    "/cliente/{cliente_id}",
-    summary="Listar orders do cliente",
-    description="Lista todos os orders de um cliente específico",
-    response_model=List[OrderResponse]
-)
-async def list_orders_by_cliente(
-    cliente_id: int = Path(..., description="ID do cliente"),
-    session: Session = Depends(get_session)
-) -> List[OrderResponse]:
-    """
-    Lista orders de um cliente específico.
-    
-    Aplica os princípios SOLID:
-    - Single Responsibility: Endpoint apenas orquestra a chamada do use case
-    - Dependency Inversion: Depende de abstrações (use case) não de implementações
-    """
-    try:
-        use_case: ListOrdersUseCase = ListOrdersUseCase()
-        request = ListOrdersByClienteRequest(cliente_id=cliente_id)
-        orders_data = use_case.execute(request.model_dump(), session)
-        return [OrderResponse(**order) for order in orders_data]
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao listar orders do cliente: {str(e)}")
-
-
-@order_router.get(
-    "/status/{status}",
-    summary="Listar orders por status",
-    description="Lista orders com um status específico",
-    response_model=List[OrderResponse]
-)
-async def list_orders_by_status(
-    status: str = Path(..., description="Status do order"),
-    session: Session = Depends(get_session)
-) -> List[OrderResponse]:
-    """
-    Lista orders por status.
-    
-    Aplica os princípios SOLID:
-    - Single Responsibility: Endpoint apenas orquestra a chamada do use case
-    - Dependency Inversion: Depende de abstrações (use case) não de implementações
-    """
-    try:
-        use_case: ListOrdersUseCase = ListOrdersUseCase()
-        request = ListOrdersByStatusRequest(status=status)
-        orders_data = use_case.execute(request.model_dump(), session)
-        return [OrderResponse(**order) for order in orders_data]
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao listar orders por status: {str(e)}")
+# Rotas com path estático antes de /{order_id} para não colidir (ex.: /recentes vs número).
 
 
 @order_router.get(
     "/recentes",
     summary="Listar orders recentes",
-    description="Lista orders dos últimos X dias",
+    description="Lista pedidos recentes do usuário autenticado (últimos X dias)",
     response_model=List[OrderResponse]
 )
 async def list_orders_recentes(
     days: int = Query(7, ge=1, le=365, description="Número de dias"),
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user = Depends(verify_user_permission()),
 ) -> List[OrderResponse]:
     """
     Lista orders recentes.
@@ -176,11 +95,75 @@ async def list_orders_recentes(
         use_case: ListRecentOrdersUseCase = ListRecentOrdersUseCase()
         request = ListOrdersRecentesRequest(days=days)
         orders_data = use_case.execute(request.model_dump(), session)
+        orders_data = [o for o in orders_data if o.get("id_cliente") == current_user.id]
         return [OrderResponse(**order) for order in orders_data]
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao listar orders recentes: {str(e)}")
+
+
+@order_router.get(
+    "/cliente/{cliente_id}",
+    summary="Listar orders do cliente",
+    description="Lista os pedidos do usuário autenticado. O ID na URL é ignorado; o escopo vem do token.",
+    response_model=List[OrderResponse]
+)
+async def list_orders_by_cliente(
+    cliente_id: int = Path(..., description="Ignorado — mantido apenas por compatibilidade de rota"),
+    session: Session = Depends(get_session),
+    current_user = Depends(verify_user_permission()),
+) -> List[OrderResponse]:
+    """
+    Lista orders de um cliente específico.
+    
+    Aplica os princípios SOLID:
+    - Single Responsibility: Endpoint apenas orquestra a chamada do use case
+    - Dependency Inversion: Depende de abstrações (use case) não de implementações
+    """
+    try:
+        use_case: ListOrdersUseCase = ListOrdersUseCase()
+        request = ListOrdersByClienteRequest(cliente_id=current_user.id)
+        orders_data = use_case.execute(request.model_dump(), session)
+        return [OrderResponse(**order) for order in orders_data]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao listar orders do cliente: {str(e)}")
+
+
+@order_router.get(
+    "/status/{status}",
+    summary="Listar orders por status",
+    description="Lista pedidos do usuário autenticado com um status específico",
+    response_model=List[OrderResponse]
+)
+async def list_orders_by_status(
+    status: str = Path(..., description="Status do order"),
+    session: Session = Depends(get_session),
+    current_user = Depends(verify_user_permission()),
+) -> List[OrderResponse]:
+    """
+    Lista orders por status.
+    
+    Aplica os princípios SOLID:
+    - Single Responsibility: Endpoint apenas orquestra a chamada do use case
+    - Dependency Inversion: Depende de abstrações (use case) não de implementações
+    """
+    try:
+        try:
+            status_enum = OrderStatusEnum(status)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Status inválido")
+        use_case: ListOrdersUseCase = ListOrdersUseCase()
+        request_dict = {"cliente_id": current_user.id}
+        orders_data = use_case.execute(request_dict, session)
+        orders_data = [o for o in orders_data if o.get("status") == status_enum.value]
+        return [OrderResponse(**order) for order in orders_data]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao listar orders por status: {str(e)}")
 
 
 @order_router.post(
@@ -250,4 +233,65 @@ async def send_order_email(
             status_code=500, 
             detail=f"Erro ao enviar order por email: {str(e)}"
         )
+
+
+@order_router.post(
+    "/{order_id}/reorder",
+    summary="Comprar novamente",
+    description="Cria um novo pedido PENDENTE com os mesmos itens e cliente do pedido informado, usando o preço atual (valor_base) de cada produto.",
+    response_model=OrderResponse,
+)
+async def reorder_order(
+    order_id: int = Path(..., description="ID do pedido de referência"),
+    session: Session = Depends(get_session),
+    current_user=Depends(verify_user_permission()),
+) -> OrderResponse:
+    try:
+        use_case = ReorderOrderUseCase()
+        order_data = use_case.execute(
+            {
+                "pedido_id": order_id,
+                "requester_company_id": current_user.id,
+                "requester_role": current_user.role,
+            },
+            session,
+        )
+        return OrderResponse(**order_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao recomprar pedido: {str(e)}")
+
+
+@order_router.get(
+    "/{order_id}",
+    summary="Buscar order por ID",
+    description="Busca um order específico pelo ID",
+    response_model=OrderResponse
+)
+async def get_order(
+    order_id: int = Path(..., description="ID do order"),
+    include_items: bool = Query(False, description="Incluir itens do order"),
+    session: Session = Depends(get_session),
+    current_user = Depends(verify_user_permission())
+) -> OrderResponse:
+    """
+    Busca order por ID.
+    
+    Aplica os princípios SOLID:
+    - Single Responsibility: Endpoint apenas orquestra a chamada do use case
+    - Dependency Inversion: Depende de abstrações (use case) não de implementações
+    """
+    try:
+        use_case: GetOrderUseCase = GetOrderUseCase()
+        # Mapeia order_id para pedido_id (o use case ainda espera pedido_id)
+        request_dict = {"pedido_id": order_id, "include_items": include_items}
+        order_data = use_case.execute(request_dict, session)
+        if order_data.get("id_cliente") != current_user.id:
+            raise HTTPException(status_code=404, detail="Order não encontrado")
+        return OrderResponse(**order_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar order: {str(e)}")
 
