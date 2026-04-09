@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from fastapi.responses import JSONResponse
-from typing import List
+from typing import Any, Dict, List
 from loguru import logger
 
 # Use Cases
@@ -18,15 +18,11 @@ from app.infrastructure.configs.session_config import get_session
 from app.infrastructure.configs.security_config import verify_user_permission
 from app.presentation.routers.request.order_request import (
     ListOrdersRequest,
-    GetOrderRequest,
     ListOrdersByClienteRequest,
     ListOrdersRecentesRequest,
     SendOrderEmailRequest
 )
-from app.presentation.routers.response.order_response import (
-    OrderResponse,
-    ListOrdersResponse
-)
+from app.presentation.routers.response.order_response import OrderResponse
 from app.domain.models.enumerations.order_status_enumerations import OrderStatusEnum
 from app.domain.models.enumerations.role_enumerations import RoleEnum
 
@@ -41,10 +37,27 @@ order_router = APIRouter(
 )
 
 
+def _enrich_orders_with_items(
+    orders_data: List[Dict[str, Any]],
+    session: Session,
+) -> List[Dict[str, Any]]:
+    """Preenche cada pedido com itens via GetOrderUseCase (mesmo formato do GET por ID)."""
+    if not orders_data:
+        return []
+    get_use_case = GetOrderUseCase()
+    return [
+        get_use_case.execute(
+            {"pedido_id": order["id"], "include_items": True},
+            session,
+        )
+        for order in orders_data
+    ]
+
+
 @order_router.get(
     "",
     summary="Listar orders",
-    description="Listagem geral de pedidos (administrativo). Apenas usuários ADMIN. Filtros opcionais via query.",
+    description="Listagem geral de pedidos (administrativo). Apenas usuários ADMIN. Filtros opcionais via query. Cada pedido inclui seus itens.",
     response_model=List[OrderResponse]
 )
 async def list_orders(
@@ -63,6 +76,7 @@ async def list_orders(
     try:
         use_case: ListOrdersUseCase = ListOrdersUseCase()
         orders_data = use_case.execute(request.model_dump(), session)
+        orders_data = _enrich_orders_with_items(orders_data, session)
         return [OrderResponse(**order) for order in orders_data]
     except HTTPException:
         raise
@@ -76,7 +90,7 @@ async def list_orders(
 @order_router.get(
     "/recentes",
     summary="Listar orders recentes",
-    description="Lista pedidos recentes do usuário autenticado (últimos X dias)",
+    description="Lista pedidos recentes do usuário autenticado (últimos X dias). Cada pedido inclui seus itens.",
     response_model=List[OrderResponse]
 )
 async def list_orders_recentes(
@@ -96,6 +110,7 @@ async def list_orders_recentes(
         request = ListOrdersRecentesRequest(days=days)
         orders_data = use_case.execute(request.model_dump(), session)
         orders_data = [o for o in orders_data if o.get("id_cliente") == current_user.id]
+        orders_data = _enrich_orders_with_items(orders_data, session)
         return [OrderResponse(**order) for order in orders_data]
     except HTTPException:
         raise
@@ -106,7 +121,10 @@ async def list_orders_recentes(
 @order_router.get(
     "/cliente/{cliente_id}",
     summary="Listar orders do cliente",
-    description="Lista os pedidos do usuário autenticado. O ID na URL é ignorado; o escopo vem do token.",
+    description=(
+        "Lista os pedidos do usuário autenticado, cada um com seus itens. "
+        "O ID na URL é ignorado; o escopo vem do token."
+    ),
     response_model=List[OrderResponse]
 )
 async def list_orders_by_cliente(
@@ -122,9 +140,10 @@ async def list_orders_by_cliente(
     - Dependency Inversion: Depende de abstrações (use case) não de implementações
     """
     try:
-        use_case: ListOrdersUseCase = ListOrdersUseCase()
+        list_use_case: ListOrdersUseCase = ListOrdersUseCase()
         request = ListOrdersByClienteRequest(cliente_id=current_user.id)
-        orders_data = use_case.execute(request.model_dump(), session)
+        orders_data = list_use_case.execute(request.model_dump(), session)
+        orders_data = _enrich_orders_with_items(orders_data, session)
         return [OrderResponse(**order) for order in orders_data]
     except HTTPException:
         raise
@@ -135,7 +154,7 @@ async def list_orders_by_cliente(
 @order_router.get(
     "/status/{status}",
     summary="Listar orders por status",
-    description="Lista pedidos do usuário autenticado com um status específico",
+    description="Lista pedidos do usuário autenticado com um status específico. Cada pedido inclui seus itens.",
     response_model=List[OrderResponse]
 )
 async def list_orders_by_status(
@@ -159,6 +178,7 @@ async def list_orders_by_status(
         request_dict = {"cliente_id": current_user.id}
         orders_data = use_case.execute(request_dict, session)
         orders_data = [o for o in orders_data if o.get("status") == status_enum.value]
+        orders_data = _enrich_orders_with_items(orders_data, session)
         return [OrderResponse(**order) for order in orders_data]
     except HTTPException:
         raise
@@ -266,12 +286,11 @@ async def reorder_order(
 @order_router.get(
     "/{order_id}",
     summary="Buscar order por ID",
-    description="Busca um order específico pelo ID",
+    description="Busca um order específico pelo ID, sempre com os itens do pedido.",
     response_model=OrderResponse
 )
 async def get_order(
     order_id: int = Path(..., description="ID do order"),
-    include_items: bool = Query(False, description="Incluir itens do order"),
     session: Session = Depends(get_session),
     current_user = Depends(verify_user_permission())
 ) -> OrderResponse:
@@ -285,7 +304,7 @@ async def get_order(
     try:
         use_case: GetOrderUseCase = GetOrderUseCase()
         # Mapeia order_id para pedido_id (o use case ainda espera pedido_id)
-        request_dict = {"pedido_id": order_id, "include_items": include_items}
+        request_dict = {"pedido_id": order_id, "include_items": True}
         order_data = use_case.execute(request_dict, session)
         if order_data.get("id_cliente") != current_user.id:
             raise HTTPException(status_code=404, detail="Order não encontrado")
