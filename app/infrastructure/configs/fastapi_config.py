@@ -75,10 +75,10 @@ application = FastAPI(
 # CONFIGURAÇÃO DE CORS (Cross-Origin Resource Sharing)
 # ============================================================================
 # Permite múltiplas origens separadas por vírgula via variável de ambiente
-# Exemplo: CORS_ORIGINS=https://seu-app.vercel.app,https://*.vercel.app,http://localhost:3000
-# 
+# Exemplo: CORS_ORIGINS=https://app.fortlar.com.br,http://localhost:3000
+#
 # IMPORTANTE: Se CORS_ORIGINS não estiver configurado, permite todas as origens (*)
-# Para produção, é recomendado configurar as URLs específicas no Render.com
+# Para produção, configure as URLs específicas do frontend em CORS_ORIGINS no .env
 # ============================================================================
 cors_origins_env = os.getenv("CORS_ORIGINS", "")
 
@@ -143,4 +143,9 @@ async def unprocessable_entity_exception_handler(request: Request, exc: Unproces
 async def generic_exception_handler(request: Request, exc: Exception):
     logger.error(f"Erro não tratado: {exc}")
     return JSONResponse(content={"error": "Erro interno do servidor"}, status_code=500)
+
+
+@application.get("/health", tags=["Health"], include_in_schema=True)
+async def health_check():
+    return {"status": "ok"}
 

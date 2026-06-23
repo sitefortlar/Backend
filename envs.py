@@ -20,17 +20,13 @@ def _get_bool(name: str, default: bool) -> bool:
 # ============================================================================
 # CONFIGURAÇÕES DO BANCO DE DADOS (PostgreSQL - Supabase)
 # ============================================================================
-# 
+#
 # IMPORTANTE: O Supabase bloqueia conexões diretas de IPs externos.
-# SEMPRE use Connection Pooling em produção (Render.com, etc)!
+# SEMPRE use Connection Pooling em produção (Docker, VM, etc)!
 #
 # OPÇÃO 1: URL completa (RECOMENDADO)
-# Configure no Render.com: SQLALCHEMY_DATABASE_URI
+# Configure em .env: SQLALCHEMY_DATABASE_URI
 # Formato: postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
-#
-# OPÇÃO 2: Variáveis separadas (ALTERNATIVA)
-# Configure no Render.com: DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME
-# O código constrói a URL automaticamente.
 #
 # Como obter a URL de Connection Pooling:
 # 1. Acesse https://app.supabase.com
