@@ -31,6 +31,7 @@ from app.presentation.routers.email_token_router import email_token_router
 from app.presentation.routers.region_router import region_router
 from app.presentation.routers.upload_router import upload_router
 from app.presentation.routers.coupon_router import coupon_router
+from app.presentation.routers.media_router import media_router
 
 
 
@@ -121,6 +122,7 @@ application.include_router(region_router, prefix="/api", tags=["Regiões"])
 application.include_router(utils_router, prefix="/api", tags=["Utilitários"])
 application.include_router(upload_router, prefix="/api", tags=["Upload"])
 application.include_router(coupon_router, prefix="/api", tags=["Cupons"])
+application.include_router(media_router, prefix="/api", tags=["Media"])
 
 # ==== Exception handlers ====
 @application.exception_handler(ExistingRecordException)
@@ -148,4 +150,16 @@ async def generic_exception_handler(request: Request, exc: Exception):
 @application.get("/health", tags=["Health"], include_in_schema=True)
 async def health_check():
     return {"status": "ok"}
+
+
+@application.on_event("startup")
+async def startup_event():
+    from app.infrastructure.configs.database_config import init_db
+    from app.application.service.storage_service import StorageService
+    logger.info("Inicializando banco de dados...")
+    init_db()
+    logger.info("Banco de dados inicializado.")
+    logger.info("Inicializando buckets MinIO...")
+    StorageService.init_buckets()
+    logger.info("Buckets MinIO prontos.")
 

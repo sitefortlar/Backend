@@ -1,9 +1,8 @@
 import os
 from dotenv import load_dotenv
-from pydantic import SecretStr
 
-# Carrega variáveis do arquivo .env
 load_dotenv()
+
 
 def _get_int(name: str, default: int) -> int:
     try:
@@ -11,82 +10,65 @@ def _get_int(name: str, default: int) -> int:
     except Exception:
         return default
 
+
 def _get_bool(name: str, default: bool) -> bool:
     val = os.getenv(name)
     if val is None:
         return default
     return str(val).strip().lower() in ("1", "true", "t", "yes", "y", "on")
 
-# ============================================================================
-# CONFIGURAÇÕES DO BANCO DE DADOS (PostgreSQL - Supabase)
-# ============================================================================
-#
-# IMPORTANTE: O Supabase bloqueia conexões diretas de IPs externos.
-# SEMPRE use Connection Pooling em produção (Docker, VM, etc)!
-#
-# OPÇÃO 1: URL completa (RECOMENDADO)
-# Configure em .env: SQLALCHEMY_DATABASE_URI
-# Formato: postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
-#
-# Como obter a URL de Connection Pooling:
-# 1. Acesse https://app.supabase.com
-# 2. Settings > Database > Connection string
-# 3. Selecione "Connection pooling" (não "Direct connection")
-# 4. Copie a URL completa
-# ============================================================================
 
-# Tenta obter URL completa das variáveis de ambiente
+# ============================================================================
+# BANCO DE DADOS (PostgreSQL local via Docker)
+# ============================================================================
+# Hostname "postgres" é o nome do serviço no docker-compose.
+# Formato: postgresql://usuario:senha@postgres:5432/nome_banco
 SQLALCHEMY_DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI", "")
 
+POSTGRES_USER = os.getenv("POSTGRES_USER", "fortlar")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "fortlar")
 
-# Pool de Conexão
+# Pool de conexões
 SQLALCHEMY_POOL_SIZE = _get_int("SQLALCHEMY_POOL_SIZE", 15)
 SQLALCHEMY_MAX_OVERFLOW = _get_int("SQLALCHEMY_MAX_OVERFLOW", 20)
 SQLALCHEMY_POOL_TIMEOUT = _get_int("SQLALCHEMY_POOL_TIMEOUT", 30)
 SQLALCHEMY_POOL_RECYCLE = _get_int("SQLALCHEMY_POOL_RECYCLE", 1800)
 SQLALCHEMY_POOL_PRE_PING = _get_bool("SQLALCHEMY_POOL_PRE_PING", True)
 
-# Logs do SQL
-SQLALCHEMY_SHOW_SQL = _get_bool("SQLALCHEMY_SHOW_SQL", True)
+# Logs de SQL (desativar em produção)
+SQLALCHEMY_SHOW_SQL = _get_bool("SQLALCHEMY_SHOW_SQL", False)
 
-# JWT
+# ============================================================================
+# JWT — AUTENTICAÇÃO
+# ============================================================================
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRATION_MINUTES = _get_int("JWT_EXPIRATION_MINUTES", 60)
 
-MAIL_USERNAME_ORDER = os.getenv("MAIL_USERNAME_ORDER", "")  # Email para receber cópia dos orders
-
+# ============================================================================
+# EMAIL
+# ============================================================================
+MAIL_USERNAME_ORDER = os.getenv("MAIL_USERNAME_ORDER", "")
 MAIL_USERNAME = os.getenv("MAIL_USERNAME", "")
 MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
 MAIL_FROM = os.getenv("MAIL_FROM", "")
 MAIL_PORT = _get_int("MAIL_PORT", 587)
 MAIL_SERVER = os.getenv("MAIL_SERVER", "")
 
-
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "products")
-
 # ============================================================================
-# SUPABASE STORAGE VIA S3 (Opcional)
+# MINIO — STORAGE S3-COMPATÍVEL
 # ============================================================================
-# Se você habilitar o "S3" em Storage no painel do Supabase, ele fornece um endpoint
-# compatível com S3 + Access Key ID/Secret para acessar o Storage via boto3/AWS SDK.
-#
-# Onde pegar:
-# Supabase Dashboard > Storage > S3
-#
-# Observação:
-# - Para GET público em imagens, normalmente NÃO precisa de credenciais (bucket público + policy).
-# - Para upload via S3 protocol, precisa de Access Key ID/Secret (ou IAM/role equivalente).
-# ============================================================================
+# Endpoint interno (Docker network) — usado pelo backend para put/get/delete
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://fortlar-minio:9000")
 
-# Endpoint compatível com S3 (ex.: https://<ref>.supabase.co/storage/v1/s3)
-SUPABASE_S3_ENDPOINT = os.getenv("SUPABASE_S3_ENDPOINT", "")
+# Credenciais (definidas no docker-compose como MINIO_ROOT_USER/PASSWORD)
+MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
+MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 
-# Região (em muitos casos pode ser "us-east-1" ou a informada no painel S3 do Supabase)
-SUPABASE_S3_REGION = os.getenv("SUPABASE_S3_REGION", "")
+# Bucket padrão para todos os arquivos (imagens e planilhas)
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "fortlar")
 
-# Credenciais S3 do Supabase (NÃO commit em repo público; configure via .env no deploy)
-SUPABASE_S3_ACCESS_KEY_ID = os.getenv("SUPABASE_S3_ACCESS_KEY_ID", "")
-SUPABASE_S3_SECRET_ACCESS_KEY = os.getenv("SUPABASE_S3_SECRET_ACCESS_KEY", "")
+# URL base da API — usada para construir URLs públicas (via proxy /api/media)
+# Ex: https://api.fortlar.com.br  ou  http://localhost:8000
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")

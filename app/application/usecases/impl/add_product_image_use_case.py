@@ -1,4 +1,4 @@
-"""Use case para adicionar imagem a um produto (upload Supabase + registro no banco)"""
+"""Use case para adicionar imagem a um produto (upload local + registro no banco)"""
 
 import uuid
 from typing import Dict, Any
@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from loguru import logger
 
 from app.application.usecases.use_case import UseCase
-from app.application.service.supabase_service import SupabaseService
+from app.application.service.storage_service import StorageService
 from app.domain.models.product_image_model import ProductImage
 from app.infrastructure.repositories.product_repository_interface import IProductRepository
 from app.infrastructure.repositories.product_image_repository_interface import IProductImageRepository
@@ -14,7 +14,6 @@ from app.infrastructure.repositories.impl.product_repository_impl import Product
 from app.infrastructure.repositories.impl.product_image_repository_impl import ProductImageRepositoryImpl
 
 
-# Mapeamento de extensão / content-type comum para imagens
 CONTENT_TYPES = {
     "jpg": "image/jpeg",
     "jpeg": "image/jpeg",
@@ -28,7 +27,7 @@ class AddProductImageUseCase(UseCase[Dict[str, Any], ProductImage]):
     """Use case para adicionar uma imagem a um produto."""
 
     def __init__(self):
-        self.supabase_service = SupabaseService()
+        self.storage_service = StorageService()
         self.product_repository: IProductRepository = ProductRepositoryImpl()
         self.product_image_repository: IProductImageRepository = ProductImageRepositoryImpl()
 
@@ -60,21 +59,17 @@ class AddProductImageUseCase(UseCase[Dict[str, Any], ProductImage]):
                     detail="Produto não encontrado"
                 )
 
-            # Define content_type por extensão se não informado
             if not content_type:
                 ext = (file_name.split(".")[-1] or "jpg").lower()
                 content_type = CONTENT_TYPES.get(ext, "image/jpeg")
 
-            # Nome único no storage: produtos/{id_produto}/{uuid}.ext
             ext = (file_name.split(".")[-1] or "jpg").lower()
             if ext not in CONTENT_TYPES:
                 ext = "jpg"
             unique_name = f"{uuid.uuid4().hex}.{ext}"
             storage_path = f"produtos/{product_id}/{unique_name}"
 
-            public_url = self.supabase_service.upload_image(
-                storage_path, file_bytes, content_type
-            )
+            public_url = self.storage_service.upload_image(storage_path, file_bytes, content_type)
             if not public_url:
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,

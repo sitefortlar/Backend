@@ -13,7 +13,7 @@ import logging
 from app.application.usecases.use_case import UseCase
 from app.application.service.excel_loader_service import ExcelLoaderService
 from app.application.service.drive_service import DriveService
-from app.application.service.supabase_service import SupabaseService
+from app.application.service.storage_service import StorageService
 from app.infrastructure.repositories.product_repository_interface import IProductRepository
 from app.infrastructure.repositories.category_repository_interface import ICategoryRepository
 from app.infrastructure.repositories.subcategory_repository_interface import ISubcategoryRepository
@@ -35,21 +35,20 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
     def __init__(self):
         self.loader = ExcelLoaderService()
         self.drive_service = DriveService()
-        self.supabase_service = SupabaseService()
+        self.storage_service = StorageService()
         self.product_repository: IProductRepository = ProductRepositoryImpl()
         self.category_repository: ICategoryRepository = CategoryRepositoryImpl()
         self.subcategory_repository: ISubcategoryRepository = SubcategoryRepositoryImpl()
         self.product_image_repository: IProductImageRepository = ProductImageRepositoryImpl()
 
         # Cache global do run: evita download/upload repetidos dentro do mesmo job
-        # key -> supabase_public_url
         self._shared_image_cache: Dict[str, str] = {}
 
-    def _is_supabase_public_url(self, url: str) -> bool:
+    def _is_stored_url(self, url: str) -> bool:
+        """Verifica se a URL já é do storage (MinIO proxy ou legado local) — não requer upload."""
         if not url:
             return False
-        u = url.lower()
-        return "/storage/v1/object/public/" in u and ".supabase.co" in u
+        return "/api/media/" in url or "/uploads/" in url
 
     def _image_key(self, original_url: str, download_url: str) -> str:
         """
@@ -108,14 +107,14 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
         deleted_summary = {}
         if clean_before:
             logger.info(
-                "clean_before=True | Será removido: todos os produtos e imagens (banco + Supabase) antes de importar"
+                "clean_before=True | Será removido: todos os produtos e imagens (banco + storage) antes de importar"
             )
             deleted_summary = self._clean_all_data(session)
             summary["deleted_summary"] = deleted_summary
             logger.info(
                 f"Limpeza concluída | removidos: {deleted_summary.get('produtos_deletados', 0)} produtos, "
                 f"{deleted_summary.get('imagens_deletados', 0)} imagens (banco), "
-                f"{deleted_summary.get('imagens_supabase_deletadas', 0)} no Storage"
+                f"{deleted_summary.get('imagens_storage_deletadas', 0)} no Storage"
             )
 
         try:
@@ -420,25 +419,25 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                     logger.error(f"[IMG] produto={produto.codigo} idx={idx} convert_failed url={original_url[:120]}")
                     continue
 
-                # Caso já seja URL pública do Supabase: não faz download/upload
-                if self._is_supabase_public_url(download_url):
-                    supabase_url = download_url
-                    source = "supabase_input"
+                # Caso já seja URL do storage local: não faz download/upload
+                if self._is_stored_url(download_url):
+                    storage_url = download_url
+                    source = "storage_input"
                 else:
                     key = self._image_key(original_url=original_url, download_url=download_url)
 
                     cached_url = self._shared_image_cache.get(key)
                     if cached_url:
-                        supabase_url = cached_url
+                        storage_url = cached_url
                         source = "cache_hit"
                     else:
                         object_path = self._shared_object_path(key)
-                        supabase_url = self.supabase_service.public_url_for_path(object_path)
+                        storage_url = self.storage_service.public_url_for_path(object_path)
 
                         # Dedupe global por histórico no DB: se já existe essa URL em qualquer produto, reutiliza.
-                        existing_any = self.product_image_repository.get_by_url(supabase_url, session)
+                        existing_any = self.product_image_repository.get_by_url(storage_url, session)
                         if existing_any:
-                            self._shared_image_cache[key] = supabase_url
+                            self._shared_image_cache[key] = storage_url
                             source = "db_hit"
                         else:
                             image_bytes, content_type = self.drive_service.download_image_with_meta(download_url, timeout=30)
@@ -452,7 +451,7 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                                 continue
 
                             content_type = content_type or "image/jpeg"
-                            uploaded_url = self.supabase_service.upload_image(
+                            uploaded_url = self.storage_service.upload_image(
                                 file_name=object_path,
                                 file_bytes=image_bytes,
                                 content_type=content_type
@@ -461,28 +460,28 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                                 summary["errors"].append({
                                     "type": "imagem",
                                     "product_codigo": produto.codigo,
-                                    "error": "Falha no upload para Supabase (retornou None)"
+                                    "error": "Falha no upload para storage local (retornou None)"
                                 })
                                 logger.error(f"[IMG] produto={produto.codigo} idx={idx} upload_failed key={key}")
                                 continue
 
-                            supabase_url = uploaded_url
-                            self._shared_image_cache[key] = supabase_url
+                            storage_url = uploaded_url
+                            self._shared_image_cache[key] = storage_url
                             source = "uploaded"
 
                 # Registra para este produto (evita duplicata por produto)
-                if self.product_image_repository.exists_by_url(supabase_url, produto.id_produto, session):
-                    processed_urls.add(supabase_url)
+                if self.product_image_repository.exists_by_url(storage_url, produto.id_produto, session):
+                    processed_urls.add(storage_url)
                     logger.debug(f"[IMG] produto={produto.codigo} idx={idx} db_skip=exists source={source}")
                     continue
 
                 created = self.product_image_repository.create(
-                    ProductImage(id_produto=produto.id_produto, url=supabase_url),
+                    ProductImage(id_produto=produto.id_produto, url=storage_url),
                     session
                 )
                 created_count += 1
                 summary["imagens_created"] += 1
-                processed_urls.add(supabase_url)
+                processed_urls.add(storage_url)
                 logger.info(f"[IMG] produto={produto.codigo} idx={idx} db_created=1 id_imagem={created.id_imagem} source={source}")
 
             except Exception as e:
@@ -514,7 +513,7 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
         deleted_counts = {
             "produtos_deletados": 0,
             "imagens_deletados": 0,
-            "imagens_supabase_deletadas": 0
+            "imagens_storage_deletadas": 0
         }
         
         try:
@@ -532,23 +531,22 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
             
             logger.info(f"Deletadas {len(all_images)} imagem(ns) do banco de dados")
             
-            # 3. Deleta imagens no Supabase Storage (pasta produtos/ e subpastas, incluindo shared/)
-            logger.info("Deletando todas as imagens do Supabase Storage (pasta produtos/)")
+            # 3. Deleta imagens do storage local (pasta produtos/ e subpastas, incluindo shared/)
+            logger.info("Deletando todas as imagens do storage local (pasta produtos/)")
             try:
-                # Tenta primeiro a subpasta shared (em alguns casos list() não lista recursivamente)
                 try:
-                    self.supabase_service.delete_all_images_in_folder("produtos/shared")
+                    self.storage_service.delete_all_images_in_folder("produtos/shared")
                 except Exception:
                     pass
 
-                success = self.supabase_service.delete_all_images_in_folder("produtos")
+                success = self.storage_service.delete_all_images_in_folder("produtos")
                 if success:
-                    deleted_counts["imagens_supabase_deletadas"] = len(all_images)  # aproximação
-                    logger.info("Imagens do Supabase deletadas com sucesso")
+                    deleted_counts["imagens_storage_deletadas"] = len(all_images)
+                    logger.info("Imagens do storage local deletadas com sucesso")
                 else:
-                    logger.warning("Alguns arquivos do Supabase podem não ter sido deletados")
+                    logger.warning("Alguns arquivos do storage local podem não ter sido deletados")
             except Exception as e:
-                logger.error(f"Erro ao deletar imagens do Supabase: {e}", exc_info=True)
+                logger.error(f"Erro ao deletar imagens do storage local: {e}", exc_info=True)
             
             # 4. Deleta todos os produtos do banco
             all_products = self.product_repository.get_all(session, skip=0, limit=100000)
@@ -589,9 +587,9 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
             # Cria cópia do DataFrame para modificar
             df_updated = df_original.copy()
             
-            # Adiciona coluna imagem_supabase se não existir
-            if 'imagem_supabase' not in df_updated.columns:
-                df_updated['imagem_supabase'] = ''
+            # Adiciona coluna imagem_storage se não existir
+            if 'imagem_storage' not in df_updated.columns:
+                df_updated['imagem_storage'] = ''
             
             # Identifica coluna de código do produto
             codigo_col = None
@@ -624,11 +622,11 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                         # Copia URLs locais existentes do banco
                         image_urls = [img.url for img in imagens]
                         image_urls_str = '[' + ', '.join(image_urls) + ']'
-                        df_updated.at[index, 'imagem_supabase'] = image_urls_str
+                        df_updated.at[index, 'imagem_storage'] = image_urls_str
                         logger.debug(f"✅ Produto {codigo}: {len(image_urls)} URL(s) local(is) copiada(s) do banco")
                     else:
                         # Sem imagem? Deixa vazio
-                        df_updated.at[index, 'imagem_supabase'] = ''
+                        df_updated.at[index, 'imagem_storage'] = ''
                         logger.debug(f"Produto {codigo}: Sem imagens no banco - deixando vazio")
                     
                 except Exception as e:
@@ -648,9 +646,8 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             excel_file_name = f"produtos_atualizados_{timestamp}.xlsx"
 
-            # Faz upload do Excel para o Supabase (pasta planilhas/)
-            logger.info(f"Fazendo upload do Excel atualizado para Supabase: {excel_file_name}")
-            excel_url = self.supabase_service.upload_file(
+            logger.info(f"Salvando Excel atualizado no storage local: {excel_file_name}")
+            excel_url = self.storage_service.upload_file(
                 file_name=excel_file_name,
                 file_bytes=result_bytes,
                 content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

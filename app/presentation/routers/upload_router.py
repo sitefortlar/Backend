@@ -23,36 +23,36 @@ upload_router = APIRouter(
     summary="Upload de planilha Excel com processamento de imagens",
     description="""
     Faz upload de uma planilha Excel (.xlsx) com colunas: codigo, nome, imagem_url.
-    
+
     O sistema irá:
     1. Ler a planilha Excel
     2. Converter links do Google Drive para formato direto
     3. Fazer download das imagens
-    4. Enviar as imagens para o Supabase Storage
+    4. Salvar as imagens no storage local da VM
     5. Gerar links públicos das imagens
-    6. Criar uma nova planilha com coluna adicional 'imagem_supabase'
-    7. Salvar o Excel atualizado no Supabase Storage
-    8. Retornar a URL do Excel no Supabase
-    
+    6. Criar uma nova planilha com coluna adicional 'imagem_storage'
+    7. Salvar o Excel atualizado no storage local
+    8. Retornar a URL do Excel gerado
+
     **Formato da planilha:**
     - codigo: Código do produto (será usado como nome do arquivo)
     - nome: Nome do produto
     - imagem_url: URL única ou array de URLs do Google Drive
-    
+
     **Formato de imagem_url:**
     - URL única: "https://drive.google.com/uc?export=view&id=..."
     - Array de URLs: "[url1, url2, url3]" (sem aspas nas URLs, separado por vírgula)
-    
+
     **Retorno:**
-    - JSON com URL do Excel atualizado no Supabase e estatísticas do processamento
+    - JSON com URL do Excel atualizado e estatísticas do processamento
     """
 )
 async def upload_planilha_imagens(
     file: UploadFile = File(..., description="Arquivo Excel (.xlsx) com colunas: codigo, nome, imagem_url")
 ):
     """
-    Endpoint para upload e processamento de planilha Excel com imagens
-    Retorna JSON com URL do Excel atualizado no Supabase
+    Endpoint para upload e processamento de planilha Excel com imagens.
+    Retorna JSON com URL do Excel atualizado e estatísticas.
     """
     try:
         # Valida nome do arquivo

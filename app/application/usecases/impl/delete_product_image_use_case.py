@@ -1,11 +1,11 @@
-"""Use case para remover uma imagem de um produto (banco + Supabase opcional)"""
+"""Use case para remover uma imagem de um produto (banco + storage local)"""
 
 from typing import Dict, Any
 from fastapi import HTTPException, status
 from loguru import logger
 
 from app.application.usecases.use_case import UseCase
-from app.application.service.supabase_service import SupabaseService
+from app.application.service.storage_service import StorageService
 from app.infrastructure.repositories.product_repository_interface import IProductRepository
 from app.infrastructure.repositories.product_image_repository_interface import IProductImageRepository
 from app.infrastructure.repositories.impl.product_repository_impl import ProductRepositoryImpl
@@ -13,10 +13,10 @@ from app.infrastructure.repositories.impl.product_image_repository_impl import P
 
 
 class DeleteProductImageUseCase(UseCase[Dict[str, Any], bool]):
-    """Use case para deletar uma imagem de um produto (registro e arquivo no Storage)."""
+    """Use case para deletar uma imagem de um produto (registro e arquivo no storage)."""
 
     def __init__(self):
-        self.supabase_service = SupabaseService()
+        self.storage_service = StorageService()
         self.product_repository: IProductRepository = ProductRepositoryImpl()
         self.product_image_repository: IProductImageRepository = ProductImageRepositoryImpl()
 
@@ -63,9 +63,9 @@ class DeleteProductImageUseCase(UseCase[Dict[str, Any], bool]):
                 )
 
             if delete_from_storage and url:
-                path = self.supabase_service.path_from_public_url(url)
+                path = self.storage_service.path_from_public_url(url)
                 if path:
-                    self.supabase_service.delete_file(path)
+                    self.storage_service.delete_file(path)
 
             logger.info(f"Imagem removida: product_id={product_id}, image_id={image_id}")
             return True
