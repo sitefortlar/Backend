@@ -41,5 +41,7 @@ Session = sessionmaker(
 
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    # Schema gerenciado pelo Alembic — ver /alembic/
+    # Para criar/atualizar tabelas: alembic upgrade head
+    __connection_status(engine)
 

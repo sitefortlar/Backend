@@ -34,5 +34,7 @@ CMD ["gunicorn", "app.run:app", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
      "--bind", "0.0.0.0:8000", \
      "--timeout", "120", \
+     "--max-requests", "1000", \
+     "--max-requests-jitter", "100", \
      "--access-logfile", "-", \
      "--error-logfile", "-"]

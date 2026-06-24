@@ -12,6 +12,8 @@ from app.application.service.storage_service import StorageService
 
 media_router = APIRouter(prefix="/media", tags=["Media"])
 
+_storage = StorageService()
+
 
 @media_router.get("/{file_path:path}", include_in_schema=False)
 def serve_media(file_path: str) -> Response:
@@ -21,8 +23,7 @@ def serve_media(file_path: str) -> Response:
     mantendo o event loop livre para outras requisições.
     """
     try:
-        storage = StorageService()
-        body, content_type = storage.get_object(file_path)
+        body, content_type = _storage.get_object(file_path)
         if body is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
