@@ -30,9 +30,9 @@ class DriveService:
             URL de download direto ou None se não conseguir extrair o ID
         """
         try:
-            # Verifica se já é uma URL do Supabase
-            if 'supabase.co' in google_drive_url or 'supabase' in google_drive_url.lower():
-                logger.debug(f"URL já é do Supabase, retornando como está: {google_drive_url[:80]}...")
+            # URL já é do storage interno (MinIO proxy) — não precisa converter
+            if '/api/media/' in google_drive_url or '/uploads/' in google_drive_url:
+                logger.debug(f"URL já é do storage local, retornando como está: {google_drive_url[:80]}...")
                 return google_drive_url
             
             # Padrão 1: /file/d/FILE_ID/

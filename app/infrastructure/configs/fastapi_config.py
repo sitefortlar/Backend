@@ -31,6 +31,7 @@ from app.presentation.routers.upload_router import upload_router
 from app.presentation.routers.coupon_router import coupon_router
 from app.presentation.routers.media_router import media_router
 from app.presentation.routers.utils_router import utils_router
+from app.presentation.routers.storage_test_router import storage_test_router
 
 
 # ==== Lifespan — startup e shutdown ====
@@ -122,7 +123,8 @@ application.include_router(region_router,      prefix="/api", tags=["Regiões"])
 application.include_router(utils_router,       prefix="/api", tags=["Utilitários"])
 application.include_router(upload_router,      prefix="/api", tags=["Upload"])
 application.include_router(coupon_router,      prefix="/api", tags=["Cupons"])
-application.include_router(media_router,       prefix="/api", tags=["Media"])
+application.include_router(media_router,        prefix="/api", tags=["Media"])
+application.include_router(storage_test_router, prefix="/api", tags=["Storage Diagnóstico"])
 
 # ==== Exception handlers ====
 @application.exception_handler(ExistingRecordException)

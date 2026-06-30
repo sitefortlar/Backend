@@ -1,7 +1,13 @@
 """Router proxy para arquivos armazenados no MinIO.
 
 O MinIO nunca é exposto diretamente ao frontend — toda requisição de arquivo
-passa por este endpoint, que valida e serve o objeto via API.
+passa por este endpoint, que resolve bucket + key pelo primeiro segmento do path
+e serve o objeto via API.
+
+Formato de URL:
+  GET /api/media/{bucket}/{key}
+  Ex: /api/media/produtos/123/abc.jpg   → bucket=produtos  key=123/abc.jpg
+      /api/media/planilhas/relatorio.xlsx → bucket=planilhas key=relatorio.xlsx
 """
 
 from fastapi import APIRouter, HTTPException, status

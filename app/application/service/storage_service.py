@@ -1,107 +1,128 @@
-"""Serviço de armazenamento MinIO (S3-compatível) — substitui LocalStorageService"""
+"""Serviço de armazenamento — fachada de aplicação sobre MinioClient.
+
+Regras de negócio de storage:
+- Imagens de produto  → bucket MINIO_BUCKET_PRODUTOS
+- Planilhas / Excel   → bucket MINIO_BUCKET_PLANILHAS
+- URLs públicas são servidas via proxy /api/media/{bucket}/{key}
+  (MinIO nunca fica exposto diretamente ao frontend)
+
+Estrutura de URL:
+  upload_image("produtos/123/abc.jpg") → bucket=produtos  key=123/abc.jpg
+                                          URL=/api/media/produtos/123/abc.jpg
+
+  upload_file("planilhas/file.xlsx")   → bucket=planilhas key=file.xlsx
+                                          URL=/api/media/planilhas/file.xlsx
+"""
 
 from typing import Optional, Tuple
 from loguru import logger
-import boto3
-from botocore.client import Config
 from botocore.exceptions import ClientError
 
 import envs
+from app.infrastructure.storage.minio_client import MinioClient
 
 
 class StorageService:
-    """Armazenamento de arquivos via MinIO (S3-compatível).
+    """Fachada de aplicação para operações de storage.
 
-    Interface mantida compatível com LocalStorageService para minimizar
-    alterações nos use cases existentes.
-
-    URLs retornadas apontam para o endpoint /api/media/{path} da própria API,
-    que atua como proxy — o MinIO nunca fica exposto diretamente ao frontend.
+    Use cases consomem esta classe; MinioClient cuida da comunicação S3.
     """
 
-    _client = None  # singleton por processo (Gunicorn cria um por worker)
-
     def __init__(self):
-        self.bucket = envs.MINIO_BUCKET
         self.base_url = envs.APP_BASE_URL.rstrip("/")
-        self._ensure_client()
+        self.bucket_produtos = envs.MINIO_BUCKET_PRODUTOS
+        self.bucket_planilhas = envs.MINIO_BUCKET_PLANILHAS
 
-    # ------------------------------------------------------------------
-    # Inicialização
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def _ensure_client(cls) -> None:
-        if cls._client is None:
-            cls._client = boto3.client(
-                "s3",
-                endpoint_url=envs.MINIO_ENDPOINT,
-                aws_access_key_id=envs.MINIO_ROOT_USER,
-                aws_secret_access_key=envs.MINIO_ROOT_PASSWORD,
-                config=Config(signature_version="s3v4"),
-                region_name="us-east-1",
-            )
-            logger.info(f"MinIO client criado: endpoint={envs.MINIO_ENDPOINT} bucket={envs.MINIO_BUCKET}")
+    # ------------------------------------------------------------------ #
+    # Inicialização (chamada no startup da aplicação)                     #
+    # ------------------------------------------------------------------ #
 
     @classmethod
     def init_buckets(cls) -> None:
-        """Cria buckets necessários se não existirem. Deve ser chamado no startup."""
-        cls._ensure_client()
-        for bucket_name in {envs.MINIO_BUCKET}:
-            try:
-                cls._client.head_bucket(Bucket=bucket_name)
-                logger.info(f"Bucket MinIO verificado: {bucket_name}")
-            except ClientError:
-                cls._client.create_bucket(Bucket=bucket_name)
-                logger.info(f"Bucket MinIO criado: {bucket_name}")
+        """Cria os buckets necessários se não existirem. Chamado no lifespan."""
+        MinioClient.ensure_buckets([
+            envs.MINIO_BUCKET_PRODUTOS,
+            envs.MINIO_BUCKET_PLANILHAS,
+        ])
 
-    # ------------------------------------------------------------------
-    # Upload
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ #
+    # Upload                                                               #
+    # ------------------------------------------------------------------ #
 
     def upload_image(self, file_name: str, file_bytes: bytes, content_type: str = "image/jpeg") -> Optional[str]:
-        """Faz upload de imagem para MinIO e retorna URL pública via proxy da API."""
-        if "/" not in file_name:
-            file_name = f"produtos/{file_name}"
-        return self._upload(file_name, file_bytes, content_type)
+        """Upload de imagem para o bucket de produtos."""
+        key = self._normalize_key(file_name, strip_prefix="produtos")
+        return self._upload(self.bucket_produtos, key, file_bytes, content_type)
 
     def upload_file(self, file_name: str, file_bytes: bytes, content_type: str = "application/octet-stream") -> Optional[str]:
-        """Faz upload de arquivo (planilha, etc.) para MinIO e retorna URL pública via proxy da API."""
-        if "/" not in file_name:
-            file_name = f"planilhas/{file_name}"
-        return self._upload(file_name, file_bytes, content_type)
+        """Upload de arquivo (planilha, etc.) para o bucket de planilhas."""
+        key = self._normalize_key(file_name, strip_prefix="planilhas")
+        return self._upload(self.bucket_planilhas, key, file_bytes, content_type)
 
-    def _upload(self, object_key: str, file_bytes: bytes, content_type: str) -> Optional[str]:
+    def _upload(self, bucket: str, key: str, file_bytes: bytes, content_type: str) -> Optional[str]:
         try:
-            self._client.put_object(
-                Bucket=self.bucket,
-                Key=object_key,
-                Body=file_bytes,
-                ContentType=content_type,
-            )
-            url = self.public_url_for_path(object_key)
-            logger.info(f"Upload MinIO concluído: key={object_key} size={len(file_bytes)} → {url}")
+            MinioClient.upload(bucket, key, file_bytes, content_type)
+            url = self._public_url(bucket, key)
+            logger.info(f"Upload OK: bucket={bucket} key={key} size={len(file_bytes)} → {url}")
             return url
         except Exception as e:
-            logger.error(f"Erro no upload MinIO key={object_key}: {e}")
+            logger.error(f"Erro no upload MinIO bucket={bucket} key={key}: {e}")
             return None
 
-    # ------------------------------------------------------------------
-    # URL helpers
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ #
+    # Download (usado pelo media proxy)                                   #
+    # ------------------------------------------------------------------ #
+
+    def get_object(self, path: str) -> Tuple[Optional[bytes], Optional[str]]:
+        """Resolve bucket e key a partir do path da URL pública e retorna (bytes, content_type)."""
+        bucket, key = self._split_path(path)
+        try:
+            return MinioClient.get_object(bucket, key)
+        except ClientError as e:
+            logger.error(f"Erro ao buscar objeto bucket={bucket} key={key}: {e}")
+            raise
+
+    # ------------------------------------------------------------------ #
+    # Delete                                                               #
+    # ------------------------------------------------------------------ #
+
+    def delete_file(self, path: str) -> bool:
+        """Remove objeto do MinIO. path pode ser a URL pública ou o path relativo."""
+        try:
+            bucket, key = self._split_path(path)
+            MinioClient.delete(bucket, key)
+            logger.info(f"Objeto removido: bucket={bucket} key={key}")
+            return True
+        except Exception as e:
+            logger.warning(f"Erro ao remover objeto '{path}': {e}")
+            return False
+
+    def delete_all_images_in_folder(self, folder: str = "") -> bool:
+        """Remove todos os objetos com o prefixo dado no bucket de produtos."""
+        try:
+            prefix = folder.strip("/") + "/" if folder.strip("/") else ""
+            keys = list(MinioClient.list_keys(self.bucket_produtos, prefix=prefix))
+            if keys:
+                MinioClient.delete_many(self.bucket_produtos, keys)
+                logger.info(f"Removidos {len(keys)} objetos do bucket '{self.bucket_produtos}' prefixo='{prefix}'")
+            return True
+        except Exception as e:
+            logger.error(f"Erro ao limpar prefixo '{folder}' no bucket produtos: {e}")
+            return False
+
+    # ------------------------------------------------------------------ #
+    # URL helpers                                                          #
+    # ------------------------------------------------------------------ #
 
     def public_url_for_path(self, path: str) -> str:
-        """Constrói URL pública (via proxy da API) para um objeto no MinIO.
-
-        Ex: 'produtos/abc.jpg' → 'https://api.fortlar.com.br/api/media/produtos/abc.jpg'
-        """
+        """Constrói URL pública a partir de um path 'bucket/key'."""
         clean = path.lstrip("/")
         return f"{self.base_url}/api/media/{clean}"
 
     def path_from_public_url(self, public_url: str) -> Optional[str]:
-        """Extrai object key a partir da URL pública do proxy.
+        """Extrai 'bucket/key' a partir da URL pública do proxy.
 
-        Suporta tanto o novo padrão (/api/media/) quanto o legado (/uploads/).
+        Suporta o padrão atual (/api/media/) e URLs legadas (/uploads/).
         """
         if not public_url:
             return None
@@ -112,79 +133,52 @@ class StorageService:
         return None
 
     def get_public_url(self, path: str) -> str:
-        """Alias de public_url_for_path."""
         return self.public_url_for_path(path)
 
-    def get_presigned_url(self, object_key: str, expires_in: int = 3600) -> Optional[str]:
-        """Gera presigned URL para acesso interno/temporário (não usar diretamente no frontend)."""
-        try:
-            return self._client.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": self.bucket, "Key": object_key},
-                ExpiresIn=expires_in,
-            )
-        except Exception as e:
-            logger.error(f"Erro ao gerar presigned URL key={object_key}: {e}")
-            return None
+    def get_presigned_url(self, path: str, expires_in: int = 3600) -> Optional[str]:
+        bucket, key = self._split_path(path)
+        return MinioClient.presigned_url(bucket, key, expires_in)
 
-    def get_object(self, object_key: str) -> Tuple[Optional[bytes], Optional[str]]:
-        """Retorna (bytes, content_type) do objeto, ou (None, None) se não encontrado."""
-        try:
-            resp = self._client.get_object(Bucket=self.bucket, Key=object_key)
-            body = resp["Body"].read()
-            content_type = resp.get("ContentType", "application/octet-stream")
-            return body, content_type
-        except ClientError as e:
-            code = e.response["Error"]["Code"]
-            if code in ("NoSuchKey", "404"):
-                return None, None
-            logger.error(f"Erro ao buscar objeto MinIO key={object_key}: {e}")
-            raise
-
-    # ------------------------------------------------------------------
-    # Delete
-    # ------------------------------------------------------------------
-
-    def delete_file(self, path: str) -> bool:
-        """Remove objeto do MinIO."""
-        try:
-            key = path.lstrip("/")
-            self._client.delete_object(Bucket=self.bucket, Key=key)
-            logger.info(f"Objeto removido do MinIO: {key}")
-            return True
-        except Exception as e:
-            logger.warning(f"Erro ao remover objeto MinIO '{path}': {e}")
-            return False
-
-    def delete_all_images_in_folder(self, folder: str = "produtos") -> bool:
-        """Remove todos os objetos com o prefixo dado (equivalente a deletar pasta)."""
-        try:
-            prefix = folder.lstrip("/").rstrip("/") + "/"
-            paginator = self._client.get_paginator("list_objects_v2")
-            to_delete = []
-            for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
-                for obj in page.get("Contents", []):
-                    to_delete.append({"Key": obj["Key"]})
-
-            if to_delete:
-                self._client.delete_objects(
-                    Bucket=self.bucket,
-                    Delete={"Objects": to_delete, "Quiet": True},
-                )
-                logger.info(f"Removidos {len(to_delete)} objetos do MinIO com prefixo '{prefix}'")
-            return True
-        except Exception as e:
-            logger.error(f"Erro ao limpar prefixo MinIO '{folder}': {e}")
-            return False
-
-    # ------------------------------------------------------------------
-    # Utilitários
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ #
+    # Utilitários                                                          #
+    # ------------------------------------------------------------------ #
 
     def file_exists(self, path: str) -> bool:
-        """Verifica se objeto existe no MinIO."""
-        try:
-            self._client.head_object(Bucket=self.bucket, Key=path.lstrip("/"))
-            return True
-        except ClientError:
-            return False
+        bucket, key = self._split_path(path)
+        return MinioClient.exists(bucket, key)
+
+    # ------------------------------------------------------------------ #
+    # Internos                                                             #
+    # ------------------------------------------------------------------ #
+
+    def _public_url(self, bucket: str, key: str) -> str:
+        return f"{self.base_url}/api/media/{bucket}/{key}"
+
+    def _normalize_key(self, file_name: str, strip_prefix: str) -> str:
+        """Remove o prefixo redundante do bucket do key, se presente.
+
+        Ex: "produtos/123/abc.jpg" com strip_prefix="produtos" → "123/abc.jpg"
+            "abc.jpg" sem barra → mantém "abc.jpg"
+        """
+        key = file_name.lstrip("/")
+        prefix = strip_prefix.rstrip("/") + "/"
+        if key.startswith(prefix):
+            key = key[len(prefix):]
+        return key
+
+    def _split_path(self, path: str) -> Tuple[str, str]:
+        """Divide 'bucket/key/sub' em (bucket, 'key/sub').
+
+        Usado para rotear requisições de media e delete pelo bucket correto.
+        Fallback para bucket de produtos quando não há separador.
+        """
+        clean = path.lstrip("/")
+        parts = clean.split("/", 1)
+        if len(parts) == 2:
+            bucket, key = parts
+            # Valida se o bucket é conhecido; caso contrário trata como key no bucket de produtos
+            known = {self.bucket_produtos, self.bucket_planilhas}
+            if bucket in known:
+                return bucket, key
+        # path sem bucket explícito — assume produtos (compatibilidade com URLs legadas /uploads/)
+        return self.bucket_produtos, clean

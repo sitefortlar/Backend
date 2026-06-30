@@ -21,9 +21,9 @@ def _get_bool(name: str, default: bool) -> bool:
 # ============================================================================
 # BANCO DE DADOS (PostgreSQL local via Docker)
 # ============================================================================
-# Hostname "postgres" é o nome do serviço no docker-compose.
-# Formato: postgresql://usuario:senha@postgres:5432/nome_banco
 SQLALCHEMY_DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI", "")
+if not SQLALCHEMY_DATABASE_URI:
+    raise RuntimeError("SQLALCHEMY_DATABASE_URI não configurado no .env")
 
 POSTGRES_USER = os.getenv("POSTGRES_USER", "fortlar")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
@@ -36,11 +36,10 @@ SQLALCHEMY_POOL_TIMEOUT = _get_int("SQLALCHEMY_POOL_TIMEOUT", 30)
 SQLALCHEMY_POOL_RECYCLE = _get_int("SQLALCHEMY_POOL_RECYCLE", 1800)
 SQLALCHEMY_POOL_PRE_PING = _get_bool("SQLALCHEMY_POOL_PRE_PING", True)
 
-# Logs de SQL (desativar em produção)
 SQLALCHEMY_SHOW_SQL = _get_bool("SQLALCHEMY_SHOW_SQL", False)
 
 # ============================================================================
-# JWT — AUTENTICAÇÃO
+# JWT
 # ============================================================================
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
@@ -59,16 +58,24 @@ MAIL_SERVER = os.getenv("MAIL_SERVER", "")
 # ============================================================================
 # MINIO — STORAGE S3-COMPATÍVEL
 # ============================================================================
-# Endpoint interno (Docker network) — usado pelo backend para put/get/delete
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://fortlar-minio:9000")
+# Endpoint interno (Docker network) — nome do serviço no docker-compose
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
 
-# Credenciais (definidas no docker-compose como MINIO_ROOT_USER/PASSWORD)
-MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
-MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+# Credenciais de acesso do app ao MinIO
+# Em produção: crie um usuário MinIO dedicado com permissões restritas
+# Em desenvolvimento: use os mesmos valores de MINIO_ROOT_USER/PASSWORD
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", os.getenv("MINIO_ROOT_USER", "minioadmin"))
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"))
 
-# Bucket padrão para todos os arquivos (imagens e planilhas)
-MINIO_BUCKET = os.getenv("MINIO_BUCKET", "fortlar")
+# Buckets separados por domínio de dados
+MINIO_BUCKET_PRODUTOS = os.getenv("MINIO_BUCKET_PRODUTOS", "produtos")
+MINIO_BUCKET_PLANILHAS = os.getenv("MINIO_BUCKET_PLANILHAS", "planilhas")
 
 # URL base da API — usada para construir URLs públicas (via proxy /api/media)
-# Ex: https://api.fortlar.com.br  ou  http://localhost:8000
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")
+
+# ============================================================================
+# RESEND (email transacional)
+# ============================================================================
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "")
