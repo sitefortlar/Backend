@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('app/presentation/routers/product_router.py'\\).read\\(\\)\\)\")",
+      "Bash(pip show *)",
+      "Bash(.venv/bin/python /tmp/claude-1000/-home-exacta-Documentos-fortlar-Backend/5deae967-c8b9-46e5-a6c3-9d50cf143624/scratchpad/test_auth.py)",
+      "Bash(.venv/bin/pip show *)",
+      "Bash(.venv/bin/python /tmp/claude-1000/-home-exacta-Documentos-fortlar-Backend/5deae967-c8b9-46e5-a6c3-9d50cf143624/scratchpad/test_auth2.py)"
+    ]
+  }
+}

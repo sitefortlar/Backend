@@ -3,7 +3,7 @@
 import tempfile
 import os
 import threading
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Query, Path, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Query, Path, Body, BackgroundTasks
 from fastapi.responses import JSONResponse
 from typing import Any, List, Optional
 from loguru import logger
@@ -16,8 +16,8 @@ from app.infrastructure.configs.database_config import Session as DBSession
 from app.application.usecases.impl.create_product_use_case import CreateProductUseCase
 from app.application.usecases.impl.update_product_use_case import UpdateProductUseCase
 from app.application.usecases.impl.get_product_use_case import GetProductUseCase
-from app.application.usecases.impl.add_product_image_use_case import AddProductImageUseCase
-from app.application.usecases.impl.delete_product_image_use_case import DeleteProductImageUseCase
+from app.application.usecases.impl.add_product_images_use_case import AddProductImagesUseCase
+from app.application.usecases.impl.delete_product_images_use_case import DeleteProductImagesUseCase
 
 # Services
 from app.application.service.job_service import JobService, JobStatus
@@ -35,8 +35,13 @@ from app.presentation.routers.request.excel_request import (
     BulkCreateResponse
 )
 from app.presentation.routers.request.product_request import UpdateProductRequest
+from app.presentation.routers.request.product_image_request import DeleteProductImagesRequest
 from app.presentation.routers.response.product_response import ProductResponse
 from app.presentation.routers.response.cart_prices_response import CartPricesResponse
+from app.presentation.routers.response.product_image_response import (
+    ProductImageResponse,
+    DeleteProductImagesResponse,
+)
 
 produto_router = APIRouter(
     prefix="/product",
@@ -80,8 +85,7 @@ async def get_cart_prices(
     estado: str = Query(..., description="Estado do usuário (ex: SP, RJ, MG, ES)"),
     prazo: int = Query(..., description="Prazo: 0 (à vista), 30, 60"),
     ids: List[str] = Query(..., description="IDs dos produtos (ex: ids=1&ids=2 ou ids=1,2,3)"),
-    session: Session = Depends(get_session),
-    current_user = Depends(verify_user_permission(role=RoleEnum.CLIENTE))
+    session: Session = Depends(get_session)
 ) -> Any:
     try:
         product_ids = _parse_ids_param(ids)
@@ -125,8 +129,7 @@ async def list_products(
     include_kits: bool = Query(True, description="Incluir itens de kits (pode ser mais lento). Use false para acelerar."),
     skip: int = Query(0, ge=0, description="Número de registros para pular"),
     limit: Optional[int] = Query(None, ge=1, le=10000, description="Número máximo de registros (sem limite se não informado)"),
-    session: Session = Depends(get_session),
-    current_user = Depends(verify_user_permission(role=RoleEnum.CLIENTE))
+    session: Session = Depends(get_session)
 ) -> List[ProductResponse]:
     """
     Lista produtos com filtros opcionais consolidados e preços calculados por estado.
@@ -147,9 +150,9 @@ async def list_products(
     - avista: valor_base * (1 - desconto_0)
     - 30_dias: valor_base * (1 - desconto_30)
     - 60_dias: valor_base * (1 - desconto_60)
-    
-    **Autenticação necessária**: Bearer Token JWT
-    
+
+    **Rota pública**: não exige autenticação.
+
     Aplica os princípios SOLID:
     - Single Responsibility: Endpoint apenas orquestra a chamada do use case
     - Open/Closed: Extensível via novos filtros sem modificar código existente
@@ -191,8 +194,7 @@ async def list_products(
 async def get_product(
     product_id: int = Path(..., description="ID do produto"),
     estado: str = Query(..., description="Estado para cálculo de descontos (ex: SP, MG, ES)"),
-    session: Session = Depends(get_session),
-    current_user = Depends(verify_user_permission(role=RoleEnum.CLIENTE))
+    session: Session = Depends(get_session)
 ) -> ProductResponse:
     """
     Busca produto por ID com preços calculados por estado.
@@ -209,9 +211,9 @@ async def get_product(
     - avista: valor_base * (1 - desconto_0)
     - dias_30: valor_base * (1 - desconto_30)
     - dias_60: valor_base * (1 - desconto_60)
-    
-    **Autenticação necessária**: Bearer Token JWT
-    
+
+    **Rota pública**: não exige autenticação.
+
     Aplica os princípios SOLID:
     - Single Responsibility: Endpoint apenas orquestra a chamada do use case
     - Dependency Inversion: Depende de abstrações (use case) não de implementações
@@ -269,64 +271,64 @@ async def update_product(
 
 @produto_router.post(
     "/{product_id}/images",
-    summary="Adicionar imagem ao produto (admin)",
-    description="Faz upload de uma imagem para o Supabase e associa ao produto.",
-    response_model=dict
+    summary="Adicionar imagens ao produto (admin)",
+    description="Faz upload de uma ou mais imagens para o MinIO e associa ao produto.",
+    response_model=List[ProductImageResponse]
 )
-async def add_product_image(
+async def add_product_images(
     product_id: int = Path(..., description="ID do produto"),
-    file: UploadFile = File(..., description="Imagem (jpg, png, gif, webp)"),
+    files: List[UploadFile] = File(..., description="Imagens (jpg, png, gif, webp)"),
     session: Session = Depends(get_session),
     current_user=Depends(verify_user_permission(role=RoleEnum.ADMIN))
 ) -> Any:
-    """Adiciona uma imagem ao produto. A imagem é enviada ao Supabase Storage."""
+    """Adiciona uma ou mais imagens ao produto. As imagens são enviadas ao MinIO."""
     try:
-        content = await file.read()
-        content_type = file.content_type or "image/jpeg"
-        result = AddProductImageUseCase().execute(
-            {
-                "product_id": product_id,
-                "file_bytes": content,
-                "file_name": file.filename or "image.jpg",
-                "content_type": content_type,
-            },
+        uploads = []
+        for f in files:
+            uploads.append({
+                "file_bytes": await f.read(),
+                "file_name": f.filename or "image.jpg",
+                "content_type": f.content_type or "image/jpeg",
+            })
+        created = AddProductImagesUseCase().execute(
+            {"product_id": product_id, "files": uploads},
             session
         )
-        return {
-            "id_imagem": result.id_imagem,
-            "url": result.url,
-            "id_produto": product_id,
-        }
+        return [
+            {"id_imagem": img.id_imagem, "url": img.url, "id_produto": product_id}
+            for img in created
+        ]
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erro ao adicionar imagem: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro ao adicionar imagem: {str(e)}")
+        logger.error(f"Erro ao adicionar imagens: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao adicionar imagens: {str(e)}")
 
 
 @produto_router.delete(
-    "/{product_id}/images/{image_id}",
-    summary="Remover imagem do produto (admin)",
-    description="Remove a imagem do banco e opcionalmente do Supabase Storage.",
-    status_code=status.HTTP_204_NO_CONTENT
+    "/{product_id}/images",
+    summary="Remover imagens do produto (admin)",
+    description="Remove uma ou mais imagens do banco e do MinIO.",
+    response_model=DeleteProductImagesResponse
 )
-async def delete_product_image(
+async def delete_product_images(
     product_id: int = Path(..., description="ID do produto"),
-    image_id: int = Path(..., description="ID da imagem"),
+    body: DeleteProductImagesRequest = Body(...),
     session: Session = Depends(get_session),
     current_user=Depends(verify_user_permission(role=RoleEnum.ADMIN))
-) -> None:
-    """Remove uma imagem do produto."""
+) -> Any:
+    """Remove uma ou mais imagens do produto."""
     try:
-        DeleteProductImageUseCase().execute(
-            {"product_id": product_id, "image_id": image_id},
+        result = DeleteProductImagesUseCase().execute(
+            {"product_id": product_id, "image_ids": body.image_ids},
             session
         )
+        return result
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erro ao remover imagem: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro ao remover imagem: {str(e)}")
+        logger.error(f"Erro ao remover imagens: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao remover imagens: {str(e)}")
 
 
 def _process_product_upload_async(job_id: str, file_path: str, file_format: str, clean_before: bool = False):

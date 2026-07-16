@@ -68,11 +68,15 @@ MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", os.getenv("MINIO_ROOT_USER", "m
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"))
 
 # Buckets separados por domínio de dados
-MINIO_BUCKET_PRODUTOS = os.getenv("MINIO_BUCKET_PRODUTOS", "produtos")
+MINIO_BUCKET_PRODUTOS = os.getenv("MINIO_BUCKET_PRODUTOS", "fortlar")
 MINIO_BUCKET_PLANILHAS = os.getenv("MINIO_BUCKET_PLANILHAS", "planilhas")
 
-# URL base da API — usada para construir URLs públicas (via proxy /api/media)
+# URL base da API
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")
+
+# Domínio público (proxy externo em frente ao MinIO) usado para montar as URLs
+# gravadas no banco — o backend não serve mais os arquivos diretamente.
+STORAGE_PUBLIC_BASE_URL = os.getenv("STORAGE_PUBLIC_BASE_URL", "https://vendas.fortlar.com.br/storage")
 
 # ============================================================================
 # RESEND (email transacional)

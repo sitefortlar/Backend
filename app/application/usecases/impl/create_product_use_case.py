@@ -45,10 +45,10 @@ class CreateProductUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
         self._shared_image_cache: Dict[str, str] = {}
 
     def _is_stored_url(self, url: str) -> bool:
-        """Verifica se a URL já é do storage (MinIO proxy ou legado local) — não requer upload."""
+        """Verifica se a URL já é do storage (MinIO ou legado local) — não requer upload."""
         if not url:
             return False
-        return "/api/media/" in url or "/uploads/" in url
+        return "/storage/" in url or "/api/media/" in url or "/uploads/" in url
 
     def _image_key(self, original_url: str, download_url: str) -> str:
         """

@@ -3,20 +3,19 @@
 Regras de negócio de storage:
 - Imagens de produto  → bucket MINIO_BUCKET_PRODUTOS
 - Planilhas / Excel   → bucket MINIO_BUCKET_PLANILHAS
-- URLs públicas são servidas via proxy /api/media/{bucket}/{key}
-  (MinIO nunca fica exposto diretamente ao frontend)
+- URLs públicas são servidas por um domínio/proxy externo em frente ao MinIO
+  (STORAGE_PUBLIC_BASE_URL) — o backend não serve mais os arquivos.
 
 Estrutura de URL:
-  upload_image("produtos/123/abc.jpg") → bucket=produtos  key=123/abc.jpg
-                                          URL=/api/media/produtos/123/abc.jpg
+  upload_image("produtos/shared/abc.jpg") → bucket=produtos  key=shared/abc.jpg
+                                             URL={STORAGE_PUBLIC_BASE_URL}/produtos/shared/abc.jpg
 
-  upload_file("planilhas/file.xlsx")   → bucket=planilhas key=file.xlsx
-                                          URL=/api/media/planilhas/file.xlsx
+  upload_file("planilhas/file.xlsx")      → bucket=planilhas key=file.xlsx
+                                             URL={STORAGE_PUBLIC_BASE_URL}/planilhas/file.xlsx
 """
 
 from typing import Optional, Tuple
 from loguru import logger
-from botocore.exceptions import ClientError
 
 import envs
 from app.infrastructure.storage.minio_client import MinioClient
@@ -29,7 +28,7 @@ class StorageService:
     """
 
     def __init__(self):
-        self.base_url = envs.APP_BASE_URL.rstrip("/")
+        self.storage_public_base_url = envs.STORAGE_PUBLIC_BASE_URL.rstrip("/")
         self.bucket_produtos = envs.MINIO_BUCKET_PRODUTOS
         self.bucket_planilhas = envs.MINIO_BUCKET_PLANILHAS
 
@@ -70,19 +69,6 @@ class StorageService:
             return None
 
     # ------------------------------------------------------------------ #
-    # Download (usado pelo media proxy)                                   #
-    # ------------------------------------------------------------------ #
-
-    def get_object(self, path: str) -> Tuple[Optional[bytes], Optional[str]]:
-        """Resolve bucket e key a partir do path da URL pública e retorna (bytes, content_type)."""
-        bucket, key = self._split_path(path)
-        try:
-            return MinioClient.get_object(bucket, key)
-        except ClientError as e:
-            logger.error(f"Erro ao buscar objeto bucket={bucket} key={key}: {e}")
-            raise
-
-    # ------------------------------------------------------------------ #
     # Delete                                                               #
     # ------------------------------------------------------------------ #
 
@@ -117,16 +103,17 @@ class StorageService:
     def public_url_for_path(self, path: str) -> str:
         """Constrói URL pública a partir de um path 'bucket/key'."""
         clean = path.lstrip("/")
-        return f"{self.base_url}/api/media/{clean}"
+        return f"{self.storage_public_base_url}/{clean}"
 
     def path_from_public_url(self, public_url: str) -> Optional[str]:
-        """Extrai 'bucket/key' a partir da URL pública do proxy.
+        """Extrai 'bucket/key' a partir da URL pública.
 
-        Suporta o padrão atual (/api/media/) e URLs legadas (/uploads/).
+        Suporta o padrão atual (/storage/) e padrões legados (/api/media/, /uploads/)
+        para que imagens antigas ainda possam ser resolvidas corretamente.
         """
         if not public_url:
             return None
-        for marker in ("/api/media/", "/uploads/"):
+        for marker in ("/storage/", "/api/media/", "/uploads/"):
             idx = public_url.find(marker)
             if idx != -1:
                 return public_url[idx + len(marker):]
@@ -152,7 +139,7 @@ class StorageService:
     # ------------------------------------------------------------------ #
 
     def _public_url(self, bucket: str, key: str) -> str:
-        return f"{self.base_url}/api/media/{bucket}/{key}"
+        return f"{self.storage_public_base_url}/{bucket}/{key}"
 
     def _normalize_key(self, file_name: str, strip_prefix: str) -> str:
         """Remove o prefixo redundante do bucket do key, se presente.

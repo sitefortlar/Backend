@@ -30,8 +30,8 @@ class DriveService:
             URL de download direto ou None se não conseguir extrair o ID
         """
         try:
-            # URL já é do storage interno (MinIO proxy) — não precisa converter
-            if '/api/media/' in google_drive_url or '/uploads/' in google_drive_url:
+            # URL já é do storage interno (MinIO) — não precisa converter
+            if '/storage/' in google_drive_url or '/api/media/' in google_drive_url or '/uploads/' in google_drive_url:
                 logger.debug(f"URL já é do storage local, retornando como está: {google_drive_url[:80]}...")
                 return google_drive_url
             

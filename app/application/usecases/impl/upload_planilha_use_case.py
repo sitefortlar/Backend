@@ -119,8 +119,8 @@ class UploadPlanilhaUseCase(UseCase[Dict[str, Any], Dict[str, Any]]):
                                 linha_errors += 1
                                 continue
 
-                            # URL já é do storage (MinIO proxy ou legado local) — usa diretamente sem re-upload
-                            is_stored_url = '/api/media/' in download_url or '/uploads/' in download_url
+                            # URL já é do storage (MinIO ou legado local) — usa diretamente sem re-upload
+                            is_stored_url = '/storage/' in download_url or '/api/media/' in download_url or '/uploads/' in download_url
 
                             if is_stored_url:
                                 logger.info(f"Linha {index + 1}, Imagem {img_idx}: URL já é local, usando diretamente")
