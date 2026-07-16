@@ -7,8 +7,8 @@ Regras de negócio de storage:
   (STORAGE_PUBLIC_BASE_URL) — o backend não serve mais os arquivos.
 
 Estrutura de URL:
-  upload_image("produtos/shared/abc.jpg") → bucket=produtos  key=shared/abc.jpg
-                                             URL={STORAGE_PUBLIC_BASE_URL}/produtos/shared/abc.jpg
+  upload_image("produtos/shared/abc.jpg") → bucket=fortlar   key=produtos/shared/abc.jpg
+                                             URL={STORAGE_PUBLIC_BASE_URL}/fortlar/produtos/shared/abc.jpg
 
   upload_file("planilhas/file.xlsx")      → bucket=planilhas key=file.xlsx
                                              URL={STORAGE_PUBLIC_BASE_URL}/planilhas/file.xlsx
@@ -50,7 +50,7 @@ class StorageService:
 
     def upload_image(self, file_name: str, file_bytes: bytes, content_type: str = "image/jpeg") -> Optional[str]:
         """Upload de imagem para o bucket de produtos."""
-        key = self._normalize_key(file_name, strip_prefix="produtos")
+        key = file_name.lstrip("/")
         return self._upload(self.bucket_produtos, key, file_bytes, content_type)
 
     def upload_file(self, file_name: str, file_bytes: bytes, content_type: str = "application/octet-stream") -> Optional[str]:
@@ -163,8 +163,9 @@ class StorageService:
         parts = clean.split("/", 1)
         if len(parts) == 2:
             bucket, key = parts
-            # Valida se o bucket é conhecido; caso contrário trata como key no bucket de produtos
-            known = {self.bucket_produtos, self.bucket_planilhas}
+            # "produtos" é o nome legado do bucket (antes da migração para "fortlar");
+            # mantido aqui para que imagens antigas ainda possam ser deletadas.
+            known = {self.bucket_produtos, self.bucket_planilhas, "produtos"}
             if bucket in known:
                 return bucket, key
         # path sem bucket explícito — assume produtos (compatibilidade com URLs legadas /uploads/)
