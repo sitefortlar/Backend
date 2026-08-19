@@ -36,6 +36,11 @@ class IProductRepository(ABC):
         pass
 
     @abstractmethod
+    def get_by_codigos(self, codigos: List[str], session: Session) -> dict[str, Product]:
+        """Busca produtos por código, indexados pelo próprio código."""
+        pass
+
+    @abstractmethod
     def get_by_categoria(self, categoria_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         pass
 

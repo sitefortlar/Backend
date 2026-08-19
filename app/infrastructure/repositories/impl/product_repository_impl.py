@@ -52,6 +52,13 @@ class ProductRepositoryImpl(IProductRepository):
         codigo_str = str(codigo) if codigo is not None else None
         return session.query(Product).filter(Product.codigo == codigo_str).first()
 
+    def get_by_codigos(self, codigos: List[str], session: Session) -> dict[str, Product]:
+        """Busca produtos de uma planilha em uma única consulta."""
+        if not codigos:
+            return {}
+        products = session.query(Product).filter(Product.codigo.in_(codigos)).all()
+        return {product.codigo: product for product in products}
+
     def get_by_categoria(self, categoria_id: int, session: Session, skip: int = 0, limit: int = 100) -> List[Product]:
         """Busca products por categoria"""
         from sqlalchemy.orm import selectinload

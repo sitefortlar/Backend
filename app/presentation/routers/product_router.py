@@ -10,10 +10,9 @@ from loguru import logger
 
 from app.application.usecases.impl.list_products_use_case import ListProductsUseCase
 from app.application.usecases.impl.get_cart_prices_use_case import GetCartPricesUseCase
-from app.infrastructure.configs.database_config import Session as DBSession
 
 # Use Cases
-from app.application.usecases.impl.create_product_use_case import CreateProductUseCase
+from app.application.usecases.impl.update_products_from_spreadsheet_use_case import UpdateProductsFromSpreadsheetUseCase
 from app.application.usecases.impl.update_product_use_case import UpdateProductUseCase
 from app.application.usecases.impl.get_product_use_case import GetProductUseCase
 from app.application.usecases.impl.add_product_images_use_case import AddProductImagesUseCase
@@ -331,7 +330,7 @@ async def delete_product_images(
         raise HTTPException(status_code=500, detail=f"Erro ao remover imagens: {str(e)}")
 
 
-def _process_product_upload_async(job_id: str, file_path: str, file_format: str, clean_before: bool = False):
+def _process_product_upload_async(job_id: str, file_path: str, file_format: str):
     """
     Processa upload de produtos em background
     
@@ -339,34 +338,26 @@ def _process_product_upload_async(job_id: str, file_path: str, file_format: str,
         job_id: ID do job
         file_path: Caminho do arquivo temporário
         file_format: Formato do arquivo ('csv' ou 'excel')
-        clean_before: Se True, limpa tudo antes de processar
     """
     job_service = JobService()
     job_service.update_job_status(job_id, JobStatus.PROCESSING, progress=0)
     
     try:
         from app.infrastructure.configs.database_config import Session
-        from app.application.usecases.impl.create_product_use_case import CreateProductUseCase
-        
         # Cria sessão própria para o thread (usando Session() que é o sessionmaker)
         db_session = Session()
         
         try:
-            use_case = CreateProductUseCase()
+            use_case = UpdateProductsFromSpreadsheetUseCase()
             request = {
                 'file_path': file_path,
                 'file_format': file_format,
-                'clean_before': clean_before
             }
             
             logger.info(
                 f"Job {job_id}: Iniciando processamento assíncrono | "
-                f"file_format={file_format} clean_before={clean_before}"
+                f"file_format={file_format} | PATCH de nome e valor_base por codigo"
             )
-            if clean_before:
-                logger.warning(
-                    f"Job {job_id}: clean_before=True -> será removido todos os produtos e imagens antes de importar (substituição total)"
-                )
             result = use_case.execute(request, db_session)
             
             # Commit da transação
@@ -410,46 +401,28 @@ def _process_product_upload_async(job_id: str, file_path: str, file_format: str,
         )
 
 
-@produto_router.post(
+@produto_router.patch(
     "",
-    summary="Upload de planilha Excel (Assíncrono)",
-    description="Faz upload de planilha Excel e cria produtos em lote de forma assíncrona. Retorna um job_id para acompanhar o progresso.",
+    summary="Atualizar produtos por planilha (assíncrono)",
+    description="Atualiza somente nome e valor_base dos produtos encontrados pelo codigo.",
     response_model=dict
 )
-async def create_product(
-        file: UploadFile = File(..., description="Arquivo CSV ou Excel com estrutura completa"),
-        clean_before: bool = Query(False, description="Se true, limpa todos os produtos antes de importar (substituição total)"),
-        background_tasks: BackgroundTasks = BackgroundTasks(),
-        session: DBSession = Depends(get_session),
+async def patch_products_from_spreadsheet(
+        background_tasks: BackgroundTasks,
+        file: UploadFile = File(..., description="CSV ou Excel com as colunas codigo, nome e valor_base"),
         current_user=Depends(verify_user_permission(role=RoleEnum.ADMIN))
 ) -> Any:
     """
-    Upload de planilha CSV ou Excel completa para população da base de dados (PROCESSAMENTO ASSÍNCRONO).
+    Atualização parcial de produtos por CSV ou Excel (PROCESSAMENTO ASSÍNCRONO).
     
     **IMPORTANTE**: Este endpoint retorna imediatamente com um `job_id`. Use o endpoint 
     `GET /product/job/{job_id}` para acompanhar o progresso e obter o resultado.
 
     Formatos suportados:
 
-    **CSV:**
-    - codigo, id_categoria, id_subcategoria, Nome, Quantidade, Descricao, Codigo Amarração, Vlr Bruto, Vlr Unitario
-    - Preços por região/prazo: Vista SP, 30 dias SP, 60 dias SP, Vista MG, 30 dias MG, 60 dias MG, Vista ES, 30 dias ES, 60 dias ES
-
-    **Excel:**
-    - PRODUTO, CATEGORIA, SUBCATEGORIA, DESCRIÇÃO, REGIÃO, PRAZO DE ENTREGA, VALOR UNITÁRIO, KIT, OBSERVAÇÕES
-
-    O sistema detecta automaticamente o formato e processa adequadamente.
-
-    O sistema irá (em background):
-    1. Criar categorias e subcategorias automaticamente se não existirem
-    2. Criar regiões e prazos de pagamento se não existirem
-    3. Criar ou atualizar produtos (busca por código ou nome)
-    4. Criar kits e associar produtos baseado na coluna KIT ou Código Amarração
-    5. Criar preços por região/prazo (formato CSV)
-    6. Processar imagens e fazer upload para Supabase Storage
-
-    **Query params:**
-    - `clean_before`: se `true`, remove todos os produtos (e imagens) antes de importar (substituição total).
+    A planilha deve ter **exatamente** estas colunas: `codigo`, `nome`, `valor_base`.
+    Cada linha procura um produto pelo `codigo` e altera somente `nome` e `valor_base`.
+    Códigos inexistentes não criam produtos; são retornados no resumo do job.
 
     **Resposta:**
     ```json
@@ -480,7 +453,7 @@ async def create_product(
             )
 
         # Determina sufixo do arquivo temporário
-        suffix = '.csv' if is_csv else '.xlsx'
+        suffix = '.csv' if is_csv else ('.xls' if file_ext.endswith('.xls') else '.xlsx')
 
         # Salva arquivo temporário
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -498,16 +471,15 @@ async def create_product(
             job_id=job_id,
             file_path=tmp_path,
             file_format='csv' if is_csv else 'excel',
-            clean_before=clean_before
         )
         
         logger.info(
             f"Job {job_id} criado e processamento assíncrono iniciado | "
-            f"arquivo={file.filename} clean_before={clean_before}"
+            f"arquivo={file.filename} | atualização parcial por codigo"
         )
         
         return JSONResponse(
-            status_code=status.HTTP_200_OK,
+            status_code=status.HTTP_202_ACCEPTED,
             content={
                 "success": True,
                 "job_id": job_id,
@@ -575,104 +547,4 @@ async def get_job_status(
         status_code=status.HTTP_200_OK,
         content=job
     )
-
-
-@produto_router.put(
-    "",
-    summary="Atualização completa de planilha Excel (limpa e recria tudo) - Assíncrono",
-    description="Faz upload de planilha Excel e recria todos os produtos do zero de forma assíncrona. "
-                "**ATENÇÃO**: Este endpoint apaga TODOS os produtos, imagens do banco e imagens do Supabase antes de processar.",
-    response_model=dict
-)
-async def update_all_products(
-        file: UploadFile = File(..., description="Arquivo CSV ou Excel com estrutura completa"),
-        background_tasks: BackgroundTasks = BackgroundTasks(),
-        session: DBSession = Depends(get_session),
-        current_user=Depends(verify_user_permission(role=RoleEnum.ADMIN))
-) -> Any:
-    """
-    Upload de planilha CSV ou Excel com limpeza completa antes de processar (PROCESSAMENTO ASSÍNCRONO).
-    
-    **IMPORTANTE**: Este endpoint retorna imediatamente com um `job_id`. Use o endpoint 
-    `GET /product/job/{job_id}` para acompanhar o progresso.
-    
-    **ATENÇÃO**: Este endpoint:
-    1. Apaga TODOS os produtos do banco de dados
-    2. Apaga TODAS as imagens de produtos do banco
-    3. Apaga TODAS as imagens do Supabase Storage (pasta produtos/)
-    4. Processa a planilha e cria tudo novamente (em background)
-    
-    Formatos suportados são os mesmos do POST:
-    
-    **CSV:**
-    - codigo, id_categoria, id_subcategoria, Nome, Quantidade, Descricao, Codigo Amarração, Vlr Bruto, Vlr Unitario
-    - Preços por região/prazo: Vista SP, 30 dias SP, 60 dias SP, Vista MG, 30 dias MG, 60 dias MG, Vista ES, 30 dias ES, 60 dias ES
-    
-    **Excel:**
-    - PRODUTO, CATEGORIA, SUBCATEGORIA, DESCRIÇÃO, REGIÃO, PRAZO DE ENTREGA, VALOR UNITÁRIO, KIT, OBSERVAÇÕES
-    
-    Use este endpoint quando quiser fazer uma atualização completa do catálogo.
-    """
-    try:
-        # Valida tipo de arquivo (mesma lógica do POST)
-        if not file.filename:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Nome do arquivo é obrigatório"
-            )
-
-        file_ext = file.filename.lower()
-        is_csv = file_ext.endswith('.csv')
-        is_excel = file_ext.endswith(('.xlsx', '.xls'))
-
-        if not (is_csv or is_excel):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Arquivo deve ser .csv, .xlsx ou .xls"
-            )
-
-        suffix = '.csv' if is_csv else '.xlsx'
-
-        # Salva arquivo temporário
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
-
-        # Cria job assíncrono
-        job_service = JobService()
-        job_id = job_service.create_job()
-        
-        # Adiciona task em background com clean_before=True
-        background_tasks.add_task(
-            _process_product_upload_async,
-            job_id=job_id,
-            file_path=tmp_path,
-            file_format='csv' if is_csv else 'excel',
-            clean_before=True  # Flag para limpar tudo antes
-        )
-        
-        logger.info(f"Job {job_id} criado (PUT - limpeza completa) e processamento assíncrono iniciado")
-        
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "success": True,
-                "job_id": job_id,
-                "status": "pending",
-                "message": "Processamento iniciado em background (com limpeza completa). Use GET /product/job/{job_id} para acompanhar o progresso.",
-                "check_status_url": f"/api/product/job/{job_id}",
-                "warning": "Este job irá APAGAR todos os produtos e imagens antes de processar!"
-            }
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Erro ao criar job: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao iniciar processamento: {str(e)}"
-        )
-
 
