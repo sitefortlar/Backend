@@ -85,6 +85,14 @@ class UpdateProductsFromSpreadsheetUseCase(UseCase[Dict[str, Any], Dict[str, Any
         for index, raw in dataframe.iterrows():
             line = index + 2
             try:
+                # Linhas sem código e sem valor não representam um produto. Alguns ERPs
+                # as incluem no CSV, inclusive com um nome/resíduo de texto preenchido.
+                # Elas são ignoradas; uma linha com somente um desses campos continua inválida.
+                missing_code = pd.isna(raw["codigo"]) or not str(raw["codigo"]).strip()
+                missing_value = pd.isna(raw["valor_base"]) or not str(raw["valor_base"]).strip()
+                if missing_code and missing_value:
+                    continue
+
                 code = self._normalize_code(raw["codigo"])
                 name = self._required_text(raw["nome"], "nome")
                 value = self._parse_decimal(raw["valor_base"])
