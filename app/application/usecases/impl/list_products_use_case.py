@@ -231,12 +231,13 @@ class ListProductsUseCase(UseCase[Dict[str, Any], List[Dict[str, Any]]]):
         # 60_dias = valor_base * desconto_60
         dias_60 = float(valor_base * region.desconto_60)
         
-        # Calcula os valores totais (preço * quantidade)
+        # O valor do item de kit já corresponde ao preço do kit completo.
+        # A quantidade é informativa e não deve multiplicar os valores exibidos.
         quantidade = product.quantidade
-        valor_base_total = float(valor_base) * quantidade
-        valor_total_avista = avista * quantidade
-        valor_total_30 = dias_30 * quantidade
-        valor_total_60 = dias_60 * quantidade
+        valor_base_total = float(valor_base)
+        valor_total_avista = avista
+        valor_total_30 = dias_30
+        valor_total_60 = dias_60
         
         return {
             'id_produto': product.id_produto,
