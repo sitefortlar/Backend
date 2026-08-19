@@ -13,6 +13,7 @@ from app.domain.models.enumerations.role_enumerations import RoleEnum
 from app.infrastructure.configs.database_config import Session
 from app.infrastructure.configs.security_config import verify_user_permission
 from app.infrastructure.configs.session_config import get_session
+from app.infrastructure.repositories.impl.company_repository_impl import CompanyRepositoryImpl
 from app.presentation.routers.request.company_request import CompanyRequest
 from app.presentation.routers.response.company_response import CompanyResponse
 
@@ -72,7 +73,7 @@ async def list_companies(
         "vendedor_id": vendedor_id,
         "search_name": search_name
     }
-    use_case: ListCompaniesUseCase = ListCompaniesUseCase()
+    use_case = ListCompaniesUseCase(company_repository=CompanyRepositoryImpl())
     return use_case.execute(request, session=session)
 
 

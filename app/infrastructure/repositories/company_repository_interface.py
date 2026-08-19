@@ -54,6 +54,10 @@ class ICompanyRepository(ABC):
         pass
 
     @abstractmethod
+    def get_all(self, session: Session, skip: int = 0, limit: int = 100) -> List[Company]:
+        pass
+
+    @abstractmethod
     def get_active_companies(self, session: Session, skip: int = 0, limit: int = 100) -> List[Company]:
         pass
 

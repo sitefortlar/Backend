@@ -89,6 +89,21 @@ class CompanyRepositoryImpl(ICompanyRepository):
             Contact.email == email
         ).first()
 
+    def get_all(self, session: Session, skip: int = 0, limit: int = 100) -> List[Company]:
+        """Lista empresas com os dados necessários para a resposta de gerenciamento."""
+        return (
+            session.query(Company)
+            .options(
+                joinedload(Company.enderecos),
+                joinedload(Company.contatos),
+                joinedload(Company.vendedor),
+            )
+            .order_by(Company.id_empresa)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
     def get_active_companies(self, session: Session, skip: int = 0, limit: int = 100) -> List[Company]:
         """Busca empresas ativas"""
         return session.query(Company).filter(
